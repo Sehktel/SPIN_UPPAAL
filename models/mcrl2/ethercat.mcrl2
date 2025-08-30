@@ -1,0 +1,188 @@
+/*
+ * Модель протокола EtherCAT в mCRL2
+ * 
+ * EtherCAT (Ethernet for Control Automation Technology) - 
+ * высокоскоростная полевая сеть для промышленной автоматизации
+ * 
+ * Архитектура:
+ * - EtherCATMaster: мастер, управляющий сетью
+ * - EtherCATSlave: слейвы, обрабатывающие команды
+ * - EtherCATNetwork: сеть, маршрутизирующая фреймы
+ * 
+ * Особенности mCRL2:
+ * - Строгая типизация состояний и команд
+ * - Математически точная семантика параллелизма
+ * - Встроенная поддержка иерархических процессов
+ */
+
+% Типы данных (Data Types)
+
+% Состояния мастера
+sort MasterState = struct 
+    idle | running | error;
+
+% Состояния слейва
+sort SlaveState = struct 
+    init | pre_op | safe_op | op | error;
+
+% Команды EtherCAT
+sort EtherCATCommand = struct 
+    lrw | lrd | lwr | aprd | apwr | fprd | fpwr;
+
+% Адреса слейвов
+sort SlaveAddress = struct 
+    addr(Nat);
+
+% Данные фрейма
+sort FrameData = struct 
+    data(List(Nat));
+
+% Статусы операций
+sort OperationStatus = struct 
+    ok | error | timeout;
+
+% EtherCAT фрейм
+sort EtherCATFrame = struct 
+    frame(EtherCATCommand, SlaveAddress, FrameData, Nat, OperationStatus);
+
+% Действия (Actions)
+
+% Мастер EtherCAT
+act % Состояния
+    master_init,         % Инициализация мастера
+    master_idle,         % Мастер в состоянии IDLE
+    master_running,      % Мастер в состоянии RUNNING
+    master_error,        % Мастер в состоянии ERROR
+    
+    % Команды
+    send_command,        % Отправка команды
+    receive_response,     % Получение ответа
+    cycle_complete,      % Завершение цикла
+    
+    % Обработка ошибок
+    handle_error,        % Обработка ошибки
+    recover_from_error;  % Восстановление после ошибки
+
+% Слейв EtherCAT
+act % Состояния
+    slave_init,          % Инициализация слейва
+    slave_pre_op,        % Слейв в PRE_OP
+    slave_safe_op,       % Слейв в SAFE_OP
+    slave_op,            % Слейв в OP
+    slave_error,         % Слейв в ERROR
+    
+    % Обработка команд
+    receive_command,      % Получение команды
+    process_lrw,          % Обработка LRW
+    process_lrd,          % Обработка LRD
+    process_lwr,          % Обработка LWR
+    send_response,        % Отправка ответа
+    
+    % Переходы состояний
+    transition_to_pre_op, % Переход в PRE_OP
+    transition_to_safe_op, % Переход в SAFE_OP
+    transition_to_op,     % Переход в OP
+    transition_to_error;  % Переход в ERROR
+
+% Сеть EtherCAT
+act % Маршрутизация
+    route_frame,          % Маршрутизация фрейма
+    forward_frame,        % Пересылка фрейма
+    deliver_frame,        % Доставка фрейма
+    
+    % Управление сетью
+    network_ready,        % Сеть готова
+    network_error,        % Ошибка сети
+    network_recovery;     % Восстановление сети
+
+% Системные действия
+act % Синхронизация
+    sync_master_slave,    % Синхронизация мастера и слейва
+    sync_network,         % Синхронизация сети
+    
+    % Мониторинг
+    monitor_cycle,        % Мониторинг цикла
+    monitor_performance;  % Мониторинг производительности
+
+% Процессы (Processes)
+
+% Мастер EtherCAT
+proc EtherCATMaster = 
+    master_init . 
+    master_idle . 
+    master_running . 
+    (send_command . receive_response . cycle_complete . EtherCATMaster + 
+     handle_error . master_error . recover_from_error . EtherCATMaster);
+
+% Слейв EtherCAT
+proc EtherCATSlave = 
+    slave_init . 
+    transition_to_pre_op . 
+    slave_pre_op . 
+    transition_to_safe_op . 
+    slave_safe_op . 
+    transition_to_op . 
+    slave_op . 
+    (receive_command . 
+     (process_lrw + process_lrd + process_lwr) . 
+     send_response . 
+     EtherCATSlave + 
+     transition_to_error . 
+     slave_error . 
+     EtherCATSlave);
+
+% Сеть EtherCAT
+proc EtherCATNetwork = 
+    network_ready . 
+    (route_frame . 
+     (deliver_frame . EtherCATNetwork + 
+      forward_frame . EtherCATNetwork) + 
+     network_error . 
+     network_recovery . 
+     EtherCATNetwork);
+
+% Система EtherCAT
+% Параллельное выполнение всех компонентов
+proc EtherCATSystem = 
+    EtherCATMaster || 
+    EtherCATSlave || 
+    EtherCATNetwork;
+
+% Инициализация системы
+init EtherCATSystem;
+
+% Комментарии по сравнению с SPIN версией:
+%
+% 1. Архитектура:
+%    - SPIN: 4 процесса (Master, Slave, Network, init)
+%    - mCRL2: 3 процесса (Master, Slave, Network) + параллелизм
+%
+% 2. Состояния:
+%    - SPIN: глобальные переменные int master_state = 0
+%    - mCRL2: типизированные состояния MasterState, SlaveState
+%
+% 3. Команды:
+%    - SPIN: #define CMD_LRW 1
+%    - mCRL2: sort EtherCATCommand = struct lrw | lrd | lwr | ...
+%
+% 4. Параллелизм:
+%    - SPIN: run EtherCATMaster(); run EtherCATSlave(0); ...
+%    - mCRL2: EtherCATMaster || EtherCATSlave || EtherCATNetwork
+%
+% 5. LTL свойства:
+%    - SPIN: ltl state_progression { ... }
+%    - mCRL2: µ-исчисление (будет добавлено позже)
+%
+% Преимущества mCRL2:
+% - Строгая типизация состояний и команд
+% - Математически точная семантика параллелизма
+% - Автоматическая оптимизация иерархических процессов
+% - Мощные средства верификации сложных свойств
+%
+% Недостатки mCRL2:
+% - Более сложный синтаксис для сложных архитектур
+% - Меньше примеров для промышленных протоколов
+% - Сложность моделирования детального состояния
+%
+% Следующий шаг: добавление µ-исчисления для проверки свойств безопасности
+% и создание скриптов автоматизации для mCRL2

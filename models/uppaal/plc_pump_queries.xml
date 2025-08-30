@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<queries>
+    <!-- ========================================== -->
+    <!-- ЗАПРОСЫ БЕЗОПАСНОСТИ ДЛЯ ПЛК СИСТЕМЫ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] not (pump1_status == 1 and pump2_status == 1)</formula>
+        <comment>Безопасность: никогда не должны работать оба насоса одновременно</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (emergency_stop == 1 imply (pump1_status == 0 and pump2_status == 0))</formula>
+        <comment>Безопасность: при аварийной остановке все насосы должны быть остановлены</comment>
+    </query>
+    
+    <query>
+        <formula>A[] ((pressure_ok == 0 or level_ok == 0) imply (pump1_status == 0 and pump2_status == 0))</formula>
+        <comment>Безопасность: при критических условиях насосы не должны работать</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump1_status == 1 imply (pressure_ok == 1 and level_ok == 1 and emergency_stop == 0))</formula>
+        <comment>Безопасность: насос 1 работает только при нормальных условиях</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump2_status == 1 imply (pressure_ok == 1 and level_ok == 1 and emergency_stop == 0))</formula>
+        <comment>Безопасность: насос 2 работает только при нормальных условиях</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ВРЕМЕННЫЕ ОГРАНИЧЕНИЯ И РЕАЛЬНОЕ ВРЕМЯ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] (emergency_signal imply E&lt;&gt; (x &lt;= EMERGENCY_RESPONSE_TIME and emergency_stop == 1))</formula>
+        <comment>Время реакции: аварийный сигнал должен обрабатываться в течение 100ms</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (start_command imply E&lt;&gt; (x &lt;= PUMP_START_TIME and (pump1_status == 1 or pump2_status == 1)))</formula>
+        <comment>Время запуска: насос должен запуститься в течение 500ms</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (stop_command imply E&lt;&gt; (x &lt;= PUMP_STOP_TIME and (pump1_status == 0 or pump2_status == 0)))</formula>
+        <comment>Время остановки: насос должен остановиться в течение 300ms</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (scan_timer &lt;= SCAN_CYCLE_TIME)</formula>
+        <comment>Цикл сканирования: ПЛК должен завершать цикл в течение 10ms</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (safety_timer &lt;= SAFETY_CHECK_TIME)</formula>
+        <comment>Проверка безопасности: должна выполняться в течение 50ms</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ЖИВОСТЬ И ДОСТИЖИМОСТЬ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] ((pressure_ok == 1 and level_ok == 1 and emergency_stop == 0) imply E&lt;&gt; (pump1_status == 1 or pump2_status == 1))</formula>
+        <comment>Живость: при нормальных условиях насосы могут запускаться</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (system_mode == 2 imply E&lt;&gt; system_mode == 0)</formula>
+        <comment>Живость: система должна восстанавливаться из аварийного режима</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump1_status == 2 imply E&lt;&gt; (maintenance_mode == 1 and pump1_status == 0))</formula>
+        <comment>Живость: насос 1 должен сбрасываться после обслуживания</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump2_status == 2 imply E&lt;&gt; (maintenance_mode == 1 and pump2_status == 0))</formula>
+        <comment>Живость: насос 2 должен сбрасываться после обслуживания</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ПРОТОКОЛЫ И ПОСЛЕДОВАТЕЛЬНОСТИ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] (start_command imply E&lt;&gt; (pump1_status == 1 or pump2_status == 1 or emergency_stop == 1 or pressure_ok == 0 or level_ok == 0))</formula>
+        <comment>Протокол: команда запуска должна приводить к результату</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (stop_command imply E&lt;&gt; (pump1_status == 0 or pump2_status == 0))</formula>
+        <comment>Протокол: команда остановки должна выполняться</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (emergency_signal imply E&lt;&gt; (system_mode == 2 and emergency_stop == 1))</formula>
+        <comment>Протокол: аварийный сигнал должен активировать аварийный режим</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- МОНИТОРИНГ И ДИАГНОСТИКА -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>E&lt;&gt; (scan_cycle &gt; 0)</formula>
+        <comment>Мониторинг: циклы сканирования должны выполняться</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (scan_cycle &gt;= 0)</formula>
+        <comment>Мониторинг: счетчик циклов не должен быть отрицательным</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump1_status &gt;= 0 and pump1_status &lt;= 2)</formula>
+        <comment>Диагностика: статус насоса 1 должен быть в допустимом диапазоне</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump2_status &gt;= 0 and pump2_status &lt;= 2)</formula>
+        <comment>Диагностика: статус насоса 2 должен быть в допустимом диапазоне</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ГРАНИЧНЫЕ УСЛОВИЯ И КРАЙНИЕ СЛУЧАИ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] (maintenance_mode == 1 imply (pump1_status == 0 or pump1_status == 2))</formula>
+        <comment>Граничные условия: в режиме обслуживания насосы не работают</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (maintenance_mode == 1 imply (pump2_status == 0 or pump2_status == 2))</formula>
+        <comment>Граничные условия: в режиме обслуживания насосы не работают</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (system_mode == 2 imply emergency_stop == 1)</formula>
+        <comment>Граничные условия: аварийный режим возможен только при аварийной остановке</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ПРОИЗВОДИТЕЛЬНОСТЬ И ОПТИМИЗАЦИЯ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] (scan_timer &lt;= 20)</formula>
+        <comment>Производительность: цикл сканирования не должен превышать 20ms</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump1_timer &lt;= 15000)</formula>
+        <comment>Производительность: таймер насоса 1 не должен превышать 15s</comment>
+    </query>
+    
+    <query>
+        <formula>A[] (pump2_timer &lt;= 15000)</formula>
+        <comment>Производительность: таймер насоса 2 не должен превышать 15s</comment>
+    </query>
+    
+    <!-- ========================================== -->
+    <!-- ИНТЕГРАЦИЯ С СИСТЕМОЙ БЕЗОПАСНОСТИ -->
+    <!-- ========================================== -->
+    
+    <query>
+        <formula>A[] (safety_violation imply E&lt;&gt; (emergency_stop == 1 or pressure_ok == 0 or level_ok == 0))</formula>
+        <comment>Интеграция: нарушение безопасности должно активировать защиту</comment>
+    </query>
+    
+    <query>
+        <formula>A[] ((pressure_ok == 0 or level_ok == 0) imply E&lt;&gt; safety_violation)</formula>
+        <comment>Интеграция: критические условия должны вызывать нарушение безопасности</comment>
+    </query>
+</queries>

@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Декларация глобальных переменных для системы светофора
+// UPPAAL модель с временными ограничениями
+
+// Глобальные переменные состояния
+int pedestrian_waiting = 0;        // Количество ожидающих пешеходов
+int cars_waiting = 0;             // Количество ожидающих автомобилей
+bool emergency_mode = false;       // Режим экстренной остановки
+int light_state = 0;              // 0=красный, 1=желтый, 2=зеленый
+
+// Константы времени (в единицах времени UPPAAL)
+const int RED_DURATION = 30;      // Длительность красного света
+const int YELLOW_DURATION = 5;    // Длительность желтого света
+const int GREEN_DURATION = 45;    // Длительность зеленого света
+const int PEDESTRIAN_CROSS_TIME = 15; // Время перехода пешехода
+const int CAR_CROSS_TIME = 8;     // Время проезда автомобиля
+const int EMERGENCY_RESPONSE = 3; // Время реакции на экстренный режим
+
+// Каналы для синхронизации
+chan pedestrian_request;           // Запрос пешехода
+chan light_change;                // Изменение сигнала
+chan emergency_activation;        // Активация экстренного режима
+chan pedestrian_cross;            // Пешеход переходит
+chan car_cross;                   // Автомобиль проезжает
+
+// Функции для работы с состоянием
+void updateLightState(int new_state) {
+    light_state = new_state;
+    light_change!;
+}
+
+void activateEmergency() {
+    emergency_mode = true;
+    emergency_activation!;
+}
+
+void deactivateEmergency() {
+    emergency_mode = false;
+}
+</declaration>
+
+<template>
+<name>TrafficLight</name>
+<declaration>
+// Локальные переменные для светофора
+clock x;                          // Основной таймер
+int cycle_count = 0;             // Счетчик циклов
+bool pedestrian_priority = false; // Приоритет пешехода
+</declaration>
+
+<location id="id0" x="0" y="0">
+    <name>Red</name>
+    <label kind="invariant">x &lt;= RED_DURATION</label>
+    <label kind="exponentialrate">1</label>
+</location>
+
+<location id="id1" x="200" y="0">
+    <name>Yellow</name>
+    <label kind="invariant">x &lt;= YELLOW_DURATION</label>
+    <label kind="exponentialrate">1</label>
+</location>
+
+<location id="id2" x="400" y="0">
+    <name>Green</name>
+    <label kind="invariant">x &lt;= GREEN_DURATION</label>
+    <label kind="exponentialrate">1</label>
+</location>
+
+<location id="id3" x="200" y="200">
+    <name>Emergency</name>
+    <label kind="invariant">x &lt;= EMERGENCY_RESPONSE</label>
+    <label kind="exponentialrate">1</label>
+</location>
+
+<location id="id4" x="400" y="200">
+    <name>PedestrianPriority</name>
+    <label kind="invariant">x &lt;= PEDESTRIAN_CROSS_TIME</label>
+    <label kind="exponentialrate">1</label>
+</location>
+
+<init ref="id0"/>
+
+<transition id="id5">
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="guard">x >= RED_DURATION</label>
+    <label kind="synchronisation">light_change!</label>
+    <label kind="assignment">x = 0, cycle_count++</label>
+</transition>
+
+<transition id="id6">
+    <source ref="id1"/>
+    <target ref="id2"/>
+    <label kind="guard">x >= YELLOW_DURATION</label>
+    <label kind="synchronisation">light_change!</label>
+    <label kind="assignment">x = 0</label>
+</transition>
+
+<transition id="id7">
+    <source ref="id2"/>
+    <target ref="id0"/>
+    <label kind="guard">x >= GREEN_DURATION</label>
+    <label kind="synchronisation">light_change!</label>
+    <label kind="assignment">x = 0</label>
+</transition>
+
+<transition id="id8">
+    <source ref="id0"/>
+    <target ref="id4"/>
+    <label kind="guard">pedestrian_waiting > 0</label>
+    <label kind="synchronisation">pedestrian_request?</label>
+    <label kind="assignment">pedestrian_priority = true, x = 0</label>
+</transition>
+
+<transition id="id9">
+    <source ref="id4"/>
+    <target ref="id0"/>
+    <label kind="guard">x >= PEDESTRIAN_CROSS_TIME</label>
+    <label kind="synchronisation">pedestrian_cross!</label>
+    <label kind="assignment">pedestrian_waiting--, pedestrian_priority = false</label>
+</transition>
+
+<transition id="id10">
+    <source ref="id2"/>
+    <target ref="id3"/>
+    <label kind="guard">emergency_mode</label>
+    <label kind="synchronisation">emergency_activation?</label>
+    <label kind="assignment">x = 0</label>
+</transition>
+
+<transition id="id11">
+    <source ref="id3"/>
+    <target ref="id0"/>
+    <label kind="guard">x >= EMERGENCY_RESPONSE</label>
+    <label kind="synchronisation">light_change!</label>
+    <label kind="assignment">deactivateEmergency(), x = 0</label>
+</transition>
+
+<transition id="id12">
+    <source ref="id0"/>
+    <target ref="id0"/>
+    <label kind="guard">pedestrian_waiting > 0</label>
+    <label kind="synchronisation">pedestrian_request?</label>
+    <label kind="assignment">pedestrian_waiting++</label>
+</transition>
+</template>
+
+<template>
+<name>Pedestrian</name>
+<declaration>
+// Локальные переменные для пешехода
+clock y;                          // Таймер пешехода
+int id;                          // Идентификатор пешехода
+bool waiting = false;            // Состояние ожидания
+bool crossing = false;           // Состояние перехода
+</declaration>
+
+<location id="id13" x="0" y="0">
+    <name>Approach</name>
+</location>
+
+<location id="id14" x="200" y="0">
+    <name>Wait</name>
+    <label kind="invariant">y &lt;= 100</label>
+</location>
+
+<location id="id15" x="400" y="0">
+    <name>Cross</name>
+    <label kind="invariant">y &lt;= PEDESTRIAN_CROSS_TIME</label>
+</location>
+
+<location id="id16" x="600" y="0">
+    <name>Complete</name>
+</location>
+
+<init ref="id13"/>
+
+<transition id="id17">
+    <source ref="id13"/>
+    <target ref="id14"/>
+    <label kind="assignment">id = _pid, waiting = true, y = 0</label>
+</transition>
+
+<transition id="id18">
+    <source ref="id14"/>
+    <target ref="id15"/>
+    <label kind="guard">light_state == 2</label>
+    <label kind="synchronisation">pedestrian_cross?</label>
+    <label kind="assignment">waiting = false, crossing = true, y = 0</label>
+</transition>
+
+<transition id="id19">
+    <source ref="id15"/>
+    <target ref="id16"/>
+    <label kind="guard">y >= PEDESTRIAN_CROSS_TIME</label>
+    <label kind="assignment">crossing = false</label>
+</transition>
+
+<transition id="id20">
+    <source ref="id14"/>
+    <target ref="id14"/>
+    <label kind="synchronisation">pedestrian_request!</label>
+    <label kind="assignment">pedestrian_waiting++</label>
+</transition>
+</template>
+
+<template>
+<name>Car</name>
+<declaration>
+// Локальные переменные для автомобиля
+clock z;                          // Таймер автомобиля
+int id;                          // Идентификатор автомобиля
+bool waiting = false;            // Состояние ожидания
+bool crossing = false;           // Состояние проезда
+</declaration>
+
+<location id="id21" x="0" y="0">
+    <name>Approach</name>
+</location>
+
+<location id="id22" x="200" y="0">
+    <name>Wait</name>
+    <label kind="invariant">z &lt;= 200</label>
+</location>
+
+<location id="id23" x="400" y="0">
+    <name>Cross</name>
+    <label kind="invariant">z &lt;= CAR_CROSS_TIME</label>
+</location>
+
+<location id="id24" x="600" y="0">
+    <name>Complete</name>
+</location>
+
+<init ref="id21"/>
+
+<transition id="id25">
+    <source ref="id21"/>
+    <target ref="id22"/>
+    <label kind="assignment">id = _pid, waiting = true, z = 0, cars_waiting++</label>
+</transition>
+
+<transition id="id26">
+    <source ref="id22"/>
+    <target ref="id23"/>
+    <label kind="guard">light_state == 2</label>
+    <label kind="synchronisation">car_cross?</label>
+    <label kind="assignment">waiting = false, crossing = true, z = 0</label>
+</transition>
+
+<transition id="id27">
+    <source ref="id23"/>
+    <target ref="id24"/>
+    <label kind="guard">z >= CAR_CROSS_TIME</label>
+    <label kind="assignment">crossing = false, cars_waiting--</label>
+</transition>
+
+<transition id="id28">
+    <source ref="id22"/>
+    <target ref="id22"/>
+    <label kind="synchronisation">light_change?</label>
+</transition>
+</template>
+
+<template>
+<name>EmergencyService</name>
+<declaration>
+// Локальные переменные для экстренной службы
+clock w;                          // Таймер экстренной службы
+int id;                          // Идентификатор службы
+bool active = false;             // Активность службы
+</declaration>
+
+<location id="id29" x="0" y="0">
+    <name>Idle</name>
+</location>
+
+<location id="id30" x="200" y="0">
+    <name>Activate</name>
+    <label kind="invariant">w &lt;= 10</label>
+</location>
+
+<location id="id31" x="400" y="0">
+    <name>Active</name>
+    <label kind="invariant">w &lt;= 50</label>
+</location>
+
+<location id="id32" x="600" y="0">
+    <name>Complete</name>
+</location>
+
+<init ref="id29"/>
+
+<transition id="id33">
+    <source ref="id29"/>
+    <target ref="id30"/>
+    <label kind="assignment">id = _pid, w = 0</label>
+</transition>
+
+<transition id="id34">
+    <source ref="id30"/>
+    <target ref="id31"/>
+    <label kind="guard">w >= 5</label>
+    <label kind="synchronisation">emergency_activation!</label>
+    <label kind="assignment">active = true, w = 0</label>
+</transition>
+
+<transition id="id35">
+    <source ref="id31"/>
+    <target ref="id32"/>
+    <label kind="guard">w >= 30</label>
+    <label kind="assignment">active = false</label>
+</transition>
+</template>
+
+<template>
+<name>SystemMonitor</name>
+<declaration>
+// Локальные переменные для мониторинга
+clock monitor_time;               // Таймер мониторинга
+int status_check_count = 0;      // Счетчик проверок статуса
+</declaration>
+
+<location id="id36" x="0" y="0">
+    <name>Monitor</name>
+    <label kind="invariant">monitor_time &lt;= 100</label>
+</location>
+
+<location id="id37" x="200" y="0">
+    <name>Check</name>
+    <label kind="invariant">monitor_time &lt;= 10</label>
+</location>
+
+<init ref="id36"/>
+
+<transition id="id38">
+    <source ref="id36"/>
+    <target ref="id37"/>
+    <label kind="guard">monitor_time >= 50</label>
+    <label kind="assignment">status_check_count++, monitor_time = 0</label>
+</transition>
+
+<transition id="id39">
+    <source ref="id37"/>
+    <target ref="id36"/>
+    <label kind="guard">monitor_time >= 5</label>
+    <label kind="assignment">monitor_time = 0</label>
+</transition>
+</template>
+
+<system>
+// Система светофора с временными ограничениями
+system TrafficLight, Pedestrian, Pedestrian, Car, Car, EmergencyService, SystemMonitor;
+</system>
+
+</nta>

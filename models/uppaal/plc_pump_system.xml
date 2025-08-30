@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.docs.uu.se/docs/rtmv/uppaal/xml-1.1/flat-1_1.dtd'>
+<nta>
+<declaration>
+// Модель UPPAAL для системы управления насосами ПЛК
+// Демонстрирует применение временной верификации в программировании ПЛК
+
+// Глобальные часы
+clock x;           // Основные часы системы
+clock pump1_timer; // Таймер насоса 1
+clock pump2_timer; // Таймер насоса 2
+clock safety_timer; // Таймер безопасности
+clock scan_timer;   // Таймер цикла сканирования
+
+// Глобальные переменные
+int pump1_status = 0;        // 0=остановлен, 1=запущен, 2=ошибка
+int pump2_status = 0;        // 0=остановлен, 1=запущен, 2=ошибка
+int system_mode = 0;         // 0=ручной, 1=автоматический, 2=аварийный
+int pressure_ok = 1;         // 1=норма, 0=критично
+int level_ok = 1;            // 1=норма, 0=критично
+int emergency_stop = 0;      // 0=норма, 1=нажата
+int maintenance_mode = 0;    // 0=рабочий, 1=обслуживание
+int scan_cycle = 0;          // Счетчик циклов сканирования
+
+// Каналы для синхронизации
+chan start_command;      // Команда запуска насоса
+chan stop_command;       // Команда остановки насоса
+chan emergency_signal;   // Сигнал аварии
+chan safety_violation;   // Нарушение безопасности
+chan scan_complete;      // Завершение цикла сканирования
+
+// Константы времени (в миллисекундах)
+const int EMERGENCY_RESPONSE_TIME = 100;    // Время реакции на аварию: 100ms
+const int PUMP_START_TIME = 500;            // Время запуска насоса: 500ms
+const int PUMP_STOP_TIME = 300;             // Время остановки насоса: 300ms
+const int SCAN_CYCLE_TIME = 10;             // Цикл сканирования: 10ms
+const int SAFETY_CHECK_TIME = 50;           // Проверка безопасности: 50ms
+const int MAINTENANCE_RESET_TIME = 1000;    // Сброс после обслуживания: 1s
+
+// Функции проверки
+bool safety_check_ok() {
+    return (pressure_ok == 1 && level_ok == 1 && emergency_stop == 0);
+}
+
+bool can_start_pump(int pump_id) {
+    if (pump_id == 1) return (pump1_status == 0 && safety_check_ok());
+    if (pump_id == 2) return (pump2_status == 0 && safety_check_ok());
+    return false;
+}
+</declaration>
+
+<template>
+<name>PLCController</name>
+<declaration>
+// Основной контроллер ПЛК
+int command;
+int pump_id;
+</declaration>
+
+<location id="id0" x="0" y="0">
+    <name>Idle</name>
+    <label kind="invariant">x <= 1000</label>
+</location>
+
+<location id="id1" x="200" y="0">
+    <name>Processing</name>
+    <label kind="invariant">x <= 100</label>
+</location>
+
+<location id="id2" x="400" y="0">
+    <name>Emergency</name>
+    <label kind="invariant">x <= 10000</label>
+</location>
+
+<location id="id3" x="600" y="0">
+    <name>SafetyCheck</name>
+    <label kind="invariant">x <= SAFETY_CHECK_TIME</label>
+</location>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="synchronisation" x="100" y="0">start_command?</label>
+    <label kind="assignment" x="100" y="20">command=1, pump_id=1, x=0</label>
+    <label kind="guard" x="100" y="40">can_start_pump(1)</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="synchronisation" x="100" y="0">start_command?</label>
+    <label kind="assignment" x="100" y="20">command=2, pump_id=2, x=0</label>
+    <label kind="guard" x="100" y="40">can_start_pump(2)</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="synchronisation" x="100" y="0">stop_command?</label>
+    <label kind="assignment" x="100" y="20">command=1, pump_id=1, x=0</label>
+    <label kind="guard" x="100" y="40">pump1_status == 1</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id1"/>
+    <label kind="synchronisation" x="100" y="0">stop_command?</label>
+    <label kind="assignment" x="100" y="20">command=2, pump_id=2, x=0</label>
+    <label kind="guard" x="100" y="40">pump2_status == 1</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id2"/>
+    <label kind="synchronisation" x="100" y="0">emergency_signal?</label>
+    <label kind="assignment" x="100" y="20">emergency_stop=1, system_mode=2, x=0</label>
+</transition>
+
+<transition>
+    <source ref="id0"/>
+    <target ref="id3"/>
+    <label kind="guard" x="100" y="0">x >= 100</label>
+    <label kind="assignment" x="100" y="20">x=0</label>
+</transition>
+
+<transition>
+    <source ref="id1"/>
+    <target ref="id0"/>
+    <label kind="guard" x="100" y="0">x >= 50</label>
+    <label kind="assignment" x="100" y="20">x=0</label>
+</transition>
+
+<transition>
+    <source ref="id2"/>
+    <target ref="id0"/>
+    <label kind="guard" x="100" y="0">emergency_stop == 0</label>
+    <label kind="assignment" x="100" y="20">system_mode=0, x=0</label>
+</transition>
+
+<transition>
+    <source ref="id3"/>
+    <target ref="id0"/>
+    <label kind="guard" x="100" y="0">x >= SAFETY_CHECK_TIME</label>
+    <label kind="assignment" x="100" y="20">x=0</label>
+</transition>
+</template>
+
+<template>
+<name>Pump1</name>
+<declaration>
+// Насос 1 с временными ограничениями
+</declaration>
+
+<location id="id4" x="0" y="100">
+    <name>Stopped</name>
+    <label kind="invariant">pump1_timer <= 1000</label>
+</location>
+
+<location id="id5" x="200" y="100">
+    <name>Starting</name>
+    <label kind="invariant">pump1_timer <= PUMP_START_TIME</label>
+</location>
+
+<location id="id6" x="400" y="100">
+    <name>Running</name>
+    <label kind="invariant">pump1_timer <= 10000</label>
+</location>
+
+<location id="id7" x="600" y="100">
+    <name>Stopping</name>
+    <label kind="invariant">pump1_timer <= PUMP_STOP_TIME</label>
+</location>
+
+<location id="id8" x="800" y="100">
+    <name>Error</name>
+    <label kind="invariant">pump1_timer <= 10000</label>
+</location>
+
+<transition>
+    <source ref="id4"/>
+    <target ref="id5"/>
+    <label kind="synchronisation" x="100" y="100">start_command?</label>
+    <label kind="guard" x="100" y="120">can_start_pump(1)</label>
+    <label kind="assignment" x="100" y="140">pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id5"/>
+    <target ref="id6"/>
+    <label kind="guard" x="100" y="100">pump1_timer >= PUMP_START_TIME</label>
+    <label kind="assignment" x="100" y="120">pump1_status=1, pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id6"/>
+    <target ref="id7"/>
+    <label kind="synchronisation" x="100" y="100">stop_command?</label>
+    <label kind="guard" x="100" y="120">pump_id == 1</label>
+    <label kind="assignment" x="100" y="140">pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id6"/>
+    <target ref="id4"/>
+    <label kind="guard" x="100" y="100">emergency_stop == 1</label>
+    <label kind="assignment" x="100" y="120">pump1_status=0, pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id7"/>
+    <target ref="id4"/>
+    <label kind="guard" x="100" y="100">pump1_timer >= PUMP_STOP_TIME</label>
+    <label kind="assignment" x="100" y="120">pump1_status=0, pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id6"/>
+    <target ref="id8"/>
+    <label kind="guard" x="100" y="100">pump1_timer >= 5000</label>
+    <label kind="assignment" x="100" y="120">pump1_status=2, pump1_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id8"/>
+    <target ref="id4"/>
+    <label kind="guard" x="100" y="100">maintenance_mode == 1</label>
+    <label kind="assignment" x="100" y="120">pump1_timer=0</label>
+</transition>
+</template>
+
+<template>
+<name>Pump2</name>
+<declaration>
+// Насос 2 с временными ограничениями
+</declaration>
+
+<location id="id9" x="0" y="200">
+    <name>Stopped</name>
+    <label kind="invariant">pump2_timer <= 1000</label>
+</location>
+
+<location id="id10" x="200" y="200">
+    <name>Starting</name>
+    <label kind="invariant">pump2_timer <= PUMP_START_TIME</label>
+</location>
+
+<location id="id11" x="400" y="200">
+    <name>Running</name>
+    <label kind="invariant">pump2_timer <= 10000</label>
+</location>
+
+<location id="id12" x="600" y="200">
+    <name>Stopping</name>
+    <label kind="invariant">pump2_timer <= PUMP_STOP_TIME</label>
+</location>
+
+<location id="id13" x="800" y="200">
+    <name>Error</name>
+    <label kind="invariant">pump2_timer <= 10000</label>
+</location>
+
+<transition>
+    <source ref="id9"/>
+    <target ref="id10"/>
+    <label kind="synchronisation" x="100" y="200">start_command?</label>
+    <label kind="guard" x="100" y="220">can_start_pump(2)</label>
+    <label kind="assignment" x="100" y="240">pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id10"/>
+    <target ref="id11"/>
+    <label kind="guard" x="100" y="200">pump2_timer >= PUMP_START_TIME</label>
+    <label kind="assignment" x="100" y="220">pump2_status=1, pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id11"/>
+    <target ref="id12"/>
+    <label kind="synchronisation" x="100" y="200">stop_command?</label>
+    <label kind="guard" x="100" y="220">pump_id == 2</label>
+    <label kind="assignment" x="100" y="240">pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id11"/>
+    <target ref="id9"/>
+    <label kind="guard" x="100" y="200">emergency_stop == 1</label>
+    <label kind="assignment" x="100" y="220">pump2_status=0, pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id12"/>
+    <target ref="id9"/>
+    <label kind="guard" x="100" y="200">pump2_timer >= PUMP_STOP_TIME</label>
+    <label kind="assignment" x="100" y="220">pump2_status=0, pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id11"/>
+    <target ref="id13"/>
+    <label kind="guard" x="100" y="200">pump2_timer >= 5000</label>
+    <label kind="assignment" x="100" y="220">pump2_status=2, pump2_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id13"/>
+    <target ref="id9"/>
+    <label kind="guard" x="100" y="200">maintenance_mode == 1</label>
+    <label kind="assignment" x="100" y="240">pump2_timer=0</label>
+</transition>
+</template>
+
+<template>
+<name>SafetySystem</name>
+<declaration>
+// Система безопасности с временными ограничениями
+</declaration>
+
+<location id="id14" x="0" y="300">
+    <name>Normal</name>
+    <label kind="invariant">safety_timer <= 1000</label>
+</location>
+
+<location id="id15" x="200" y="300">
+    <name>Critical</name>
+    <label kind="invariant">safety_timer <= 1000</label>
+</location>
+
+<location id="id16" x="400" y="300">
+    <name>Emergency</name>
+    <label kind="invariant">safety_timer <= 10000</label>
+</location>
+
+<transition>
+    <source ref="id14"/>
+    <target ref="id15"/>
+    <label kind="guard" x="100" y="300">pressure_ok == 0 || level_ok == 0</label>
+    <label kind="assignment" x="100" y="320">safety_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id14"/>
+    <target ref="id16"/>
+    <label kind="synchronisation" x="100" y="300">emergency_signal?</label>
+    <label kind="assignment" x="100" y="320">safety_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id15"/>
+    <target ref="id14"/>
+    <label kind="guard" x="100" y="300">pressure_ok == 1 && level_ok == 1</label>
+    <label kind="assignment" x="100" y="320">safety_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id16"/>
+    <target ref="id14"/>
+    <label kind="guard" x="100" y="300">emergency_stop == 0</label>
+    <label kind="assignment" x="100" y="320">safety_timer=0</label>
+</transition>
+</template>
+
+<template>
+<name>ScanCycle</name>
+<declaration>
+// Контроль цикла сканирования ПЛК
+</declaration>
+
+<location id="id17" x="0" y="400">
+    <name>ScanStart</name>
+    <label kind="invariant">scan_timer <= SCAN_CYCLE_TIME</label>
+</location>
+
+<location id="id18" x="200" y="400">
+    <name>ScanComplete</name>
+    <label kind="invariant">scan_timer <= 100</label>
+</location>
+
+<transition>
+    <source ref="id17"/>
+    <target ref="id18"/>
+    <label kind="guard" x="100" y="400">scan_timer >= SCAN_CYCLE_TIME</label>
+    <label kind="assignment" x="100" y="420">scan_cycle++, scan_timer=0</label>
+</transition>
+
+<transition>
+    <source ref="id18"/>
+    <target ref="id17"/>
+    <label kind="synchronisation" x="100" y="400">scan_complete?</label>
+    <label kind="assignment" x="100" y="420">scan_timer=0</label>
+</transition>
+</template>
+
+<system>
+// Система ПЛК управления насосами
+system PLCController, Pump1, Pump2, SafetySystem, ScanCycle;
+</system>
+</nta>

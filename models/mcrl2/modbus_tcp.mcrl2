@@ -1,0 +1,145 @@
+/*
+ * Модель протокола Modbus TCP в mCRL2
+ * 
+ * Modbus TCP - промышленный протокол запрос-ответ
+ * Демонстрирует работу с структурами данных и типами
+ * 
+ * Архитектура:
+ * - ModbusClient: клиент, отправляющий запросы
+ * - ModbusServer: сервер, обрабатывающий запросы
+ * - TCPLayer: транспортный уровень (упрощенно)
+ * 
+ * Сравнение с SPIN версией:
+ * - Строгая типизация структур данных
+ * - Математически точная семантика операций
+ * - Встроенная поддержка параллелизма
+ */
+
+% Типы данных (Data Types)
+% Функции Modbus
+sort ModbusFunction = struct 
+    read_holding_registers |    % Чтение регистров
+    write_single_register |     % Запись одного регистра
+    write_multiple_registers;   % Запись нескольких регистров
+
+% Адрес регистра (16-бит)
+sort RegisterAddress = struct 
+    addr(Nat); % addr(n) где n - номер регистра
+
+% Значение регистра (16-бит)
+sort RegisterValue = struct 
+    value(Nat); % value(n) где n - значение
+
+% PDU (Protocol Data Unit) - полезная нагрузка
+sort ModbusPDU = struct 
+    pdu(ModbusFunction, RegisterAddress, RegisterValue);
+
+% TCP заголовок (упрощенно)
+sort TCPHeader = struct 
+    tcp_header(Nat, Nat); % tcp_header(src_port, dst_port)
+
+% Полное сообщение Modbus TCP
+sort ModbusMessage = struct 
+    message(TCPHeader, ModbusPDU);
+
+% Статусы операций
+sort OperationStatus = struct 
+    success | error | timeout;
+
+% Действия (Actions)
+act % TCP уровень
+    tcp_connect,      % Установка TCP соединения
+    tcp_disconnect,   % Разрыв TCP соединения
+    tcp_send,         % Отправка TCP пакета
+    tcp_receive,      % Получение TCP пакета
+    
+    % Modbus уровень
+    send_request,     % Отправка Modbus запроса
+    receive_request,  % Получение Modbus запроса
+    send_response,    % Отправка Modbus ответа
+    receive_response, % Получение Modbus ответа
+    
+    % Операции с регистрами
+    read_register,    % Чтение регистра
+    write_register,   % Запись в регистр
+    process_request,  % Обработка запроса
+    
+    % Системные
+    timeout,          % Таймаут операции
+    error_occurred;   % Ошибка
+
+% Процесс TCP уровня
+% Упрощенная модель TCP соединения
+proc TCPLayer = 
+    tcp_connect . 
+    (tcp_send . tcp_receive + tcp_receive . tcp_send) . 
+    tcp_disconnect . 
+    TCPLayer;
+
+% Процесс Modbus клиента
+% Клиент подключается, отправляет запросы, получает ответы
+proc ModbusClient = 
+    tcp_connect . 
+    send_request . 
+    receive_response . 
+    tcp_disconnect . 
+    ModbusClient;
+
+% Процесс Modbus сервера
+% Сервер получает запросы, обрабатывает их, отправляет ответы
+proc ModbusServer = 
+    receive_request . 
+    process_request . 
+    send_response . 
+    ModbusServer;
+
+% Процесс обработки запросов
+% Обрабатывает различные типы Modbus запросов
+proc RequestProcessor = 
+    receive_request . 
+    (read_register + write_register) . 
+    send_response . 
+    RequestProcessor;
+
+% Система Modbus TCP
+% Параллельное выполнение всех компонентов
+proc ModbusTCPSystem = 
+    ModbusClient || ModbusServer || TCPLayer || RequestProcessor;
+
+% Инициализация системы
+init ModbusTCPSystem;
+
+% Комментарии по сравнению с SPIN версией:
+%
+% 1. Структуры данных:
+%    - SPIN: typedef ModbusPDU { byte function_code; byte data[10]; byte data_length; }
+%    - mCRL2: sort ModbusPDU = struct pdu(ModbusFunction, RegisterAddress, RegisterValue);
+%
+% 2. Типизация:
+%    - SPIN: слабая типизация, byte arrays
+%    - mCRL2: строгая типизация, алгебраические типы
+%
+% 3. Параллелизм:
+%    - SPIN: run TCPClient(); run TCPServer();
+%    - mCRL2: ModbusClient || ModbusServer || TCPLayer
+%
+% 4. Обработка ошибок:
+%    - SPIN: условные операторы if/else
+%    - mCRL2: выбор альтернатив (+)
+%
+% 5. Состояние:
+%    - SPIN: глобальные переменные int client_connected = 0;
+%    - mCRL2: состояние определяется структурой процесса
+%
+% Преимущества mCRL2:
+% - Строгая типизация предотвращает ошибки
+% - Математически точная семантика
+% - Автоматическая оптимизация параллельных процессов
+% - Мощные средства верификации
+%
+% Недостатки mCRL2:
+% - Более сложный синтаксис
+% - Меньше примеров для промышленных протоколов
+% - Сложность моделирования сложных состояний
+%
+% Следующий шаг: добавление µ-исчисления для проверки свойств безопасности

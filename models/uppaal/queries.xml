@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE queries PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<queries>
+    <!-- Запросы для верификации системы светофора -->
+    
+    <!-- 1. Проверка безопасности: никогда не должно быть одновременно зеленого света и ожидающего пешехода -->
+    <query>
+        <formula>A[] not (light_state == 2 and pedestrian_waiting > 0)</formula>
+        <comment>Безопасность: отсутствие конфликта между пешеходами и автомобилями</comment>
+    </query>
+    
+    <!-- 2. Проверка безопасности: количество ожидающих автомобилей не может быть отрицательным -->
+    <query>
+        <formula>A[] cars_waiting >= 0</formula>
+        <comment>Безопасность: корректность счетчика автомобилей</comment>
+    </query>
+    
+    <!-- 3. Проверка живости: если пешеход ожидает, то он должен получить возможность перейти -->
+    <query>
+        <formula>A[] (pedestrian_waiting > 0 imply E&lt;&gt; light_state == 2)</formula>
+        <comment>Живость: пешеходы получают доступ к переходу</comment>
+    </query>
+    
+    <!-- 4. Проверка живости: если автомобили ожидают, то они должны получить возможность проехать -->
+    <query>
+        <formula>A[] (cars_waiting > 0 imply E&lt;&gt; light_state == 2)</formula>
+        <comment>Живость: автомобили получают доступ к проезду</comment>
+    </query>
+    
+    <!-- 5. Проверка корректности временных ограничений: красный свет не может длиться бесконечно -->
+    <query>
+        <formula>A[] (light_state == 0 imply x &lt;= RED_DURATION)</formula>
+        <comment>Временные ограничения: корректность длительности красного света</comment>
+    </query>
+    
+    <!-- 6. Проверка корректности временных ограничений: желтый свет не может длиться бесконечно -->
+    <query>
+        <formula>A[] (light_state == 1 imply x &lt;= YELLOW_DURATION)</formula>
+        <comment>Временные ограничения: корректность длительности желтого света</comment>
+    </query>
+    
+    <!-- 7. Проверка корректности временных ограничений: зеленый свет не может длиться бесконечно -->
+    <query>
+        <formula>A[] (light_state == 2 imply x &lt;= GREEN_DURATION)</formula>
+        <comment>Временные ограничения: корректность длительности зеленого света</comment>
+    </query>
+    
+    <!-- 8. Проверка экстренного режима: экстренный режим должен быть обработан -->
+    <query>
+        <formula>A[] (emergency_mode imply E&lt;&gt; not emergency_mode)</formula>
+        <comment>Экстренный режим: система должна вернуться в нормальное состояние</comment>
+    </query>
+    
+    <!-- 9. Проверка приоритета пешеходов: пешеход должен получить приоритет при запросе -->
+    <query>
+        <formula>A[] (pedestrian_waiting > 0 imply E&lt;&gt; pedestrian_priority)</formula>
+        <comment>Приоритет пешеходов: система должна реагировать на запросы пешеходов</comment>
+    </query>
+    
+    <!-- 10. Проверка отсутствия deadlock'ов: система должна всегда иметь возможность прогресса -->
+    <query>
+        <formula>A[] not deadlock</formula>
+        <comment>Отсутствие deadlock'ов: система не должна застревать</comment>
+    </query>
+    
+    <!-- 11. Проверка корректности протокола: светофор должен циклически переключаться -->
+    <query>
+        <formula>E&lt;&gt; (light_state == 0 and x == 0)</formula>
+        <comment>Протокол: светофор должен достигать состояния красного света</comment>
+    </query>
+    
+    <!-- 12. Проверка корректности протокола: переход от красного к желтому -->
+    <query>
+        <formula>A[] (light_state == 0 and x >= RED_DURATION imply E&lt;&gt; light_state == 1)</formula>
+        <comment>Протокол: корректный переход от красного к желтому свету</comment>
+    </query>
+    
+    <!-- 13. Проверка корректности протокола: переход от желтого к зеленому -->
+    <query>
+        <formula>A[] (light_state == 1 and x >= YELLOW_DURATION imply E&lt;&gt; light_state == 2)</formula>
+        <comment>Протокол: корректный переход от желтого к зеленому свету</comment>
+    </query>
+    
+    <!-- 14. Проверка корректности протокола: переход от зеленого к красному -->
+    <query>
+        <formula>A[] (light_state == 2 and x >= GREEN_DURATION imply E&lt;&gt; light_state == 0)</formula>
+        <comment>Протокол: корректный переход от зеленого к красному свету</comment>
+    </query>
+    
+    <!-- 15. Проверка временной справедливости: пешеход не должен ждать бесконечно -->
+    <query>
+        <formula>A[] (pedestrian_waiting > 0 imply E&lt;&gt; pedestrian_waiting == 0)</formula>
+        <comment>Временная справедливость: пешеходы не должны "голодать"</comment>
+    </query>
+    
+    <!-- 16. Проверка временной справедливости: автомобили не должны ждать бесконечно -->
+    <query>
+        <formula>A[] (cars_waiting > 0 imply E&lt;&gt; cars_waiting == 0)</formula>
+        <comment>Временная справедливость: автомобили не должны "голодать"</comment>
+    </query>
+    
+    <!-- 17. Проверка мониторинга: система должна периодически проверять состояние -->
+    <query>
+        <formula>E&lt;&gt; (status_check_count > 0)</formula>
+        <comment>Мониторинг: система должна выполнять проверки состояния</comment>
+    </query>
+    
+    <!-- 18. Проверка экстренного реагирования: время реакции на экстренный режим -->
+    <query>
+        <formula>A[] (emergency_mode imply x &lt;= EMERGENCY_RESPONSE)</formula>
+        <comment>Экстренное реагирование: система должна быстро реагировать</comment>
+    </query>
+    
+    <!-- 19. Проверка синхронизации: пешеходы и автомобили не должны пересекаться -->
+    <query>
+        <formula>A[] not (pedestrian_cross and car_cross)</formula>
+        <comment>Синхронизация: отсутствие одновременного пересечения</comment>
+    </query>
+    
+    <!-- 20. Проверка корректности счетчиков: счетчики должны корректно обновляться -->
+    <query>
+        <formula>A[] (pedestrian_waiting >= 0 and cars_waiting >= 0)</formula>
+        <comment>Счетчики: корректность обновления счетчиков ожидания</comment>
+    </query>
+    
+    <!-- Дополнительные запросы для тестирования граничных случаев -->
+    
+    <!-- 21. Проверка максимального количества ожидающих -->
+    <query>
+        <formula>E&lt;&gt; (pedestrian_waiting == 5)</formula>
+        <comment>Граничные случаи: достижение максимального количества пешеходов</comment>
+    </query>
+    
+    <!-- 22. Проверка максимального количества автомобилей -->
+    <query>
+        <formula>E&lt;&gt; (cars_waiting == 10)</formula>
+        <comment>Граничные случаи: достижение максимального количества автомобилей</comment>
+    </query>
+    
+    <!-- 23. Проверка одновременной активации экстренного режима и пешехода -->
+    <query>
+        <formula>E&lt;&gt; (emergency_mode and pedestrian_waiting > 0)</formula>
+        <comment>Граничные случаи: одновременная активация экстренного режима и пешехода</comment>
+    </query>
+    
+    <!-- 24. Проверка корректности временных интервалов -->
+    <query>
+        <formula>A[] (light_state == 0 imply x &lt;= RED_DURATION + 5)</formula>
+        <comment>Временные интервалы: допуск на небольшие задержки</comment>
+    </query>
+    
+    <!-- 25. Проверка отсутствия зацикливания -->
+    <query>
+        <formula>A[] (cycle_count &lt;= 1000)</formula>
+        <comment>Отсутствие зацикливания: ограничение на количество циклов</comment>
+    </query>
+</queries>

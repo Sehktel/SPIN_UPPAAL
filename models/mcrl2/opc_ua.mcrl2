@@ -1,0 +1,191 @@
+/*
+ * Модель протокола OPC UA в mCRL2
+ * 
+ * OPC UA - промышленный протокол с многоуровневой безопасностью
+ * Демонстрирует сложные архитектуры и механизмы безопасности
+ * 
+ * Архитектура (7 уровней, упрощенно):
+ * - Application: прикладной уровень (клиент/сервер)
+ * - Session: сеансовый уровень (аутентификация, авторизация)
+ * - Transport: транспортный уровень (шифрование, соединения)
+ * - Network: сетевой уровень (IP, маршрутизация)
+ * 
+ * Сравнение с SPIN версией:
+ * - Строгая типизация уровней безопасности
+ * - Математически точная семантика параллелизма
+ * - Встроенная поддержка иерархических процессов
+ */
+
+% Типы данных (Data Types)
+
+% Уровни безопасности OPC UA
+sort SecurityLevel = struct 
+    none |              % Без безопасности
+    basic |             % Базовая безопасность (TLS)
+    sign |              % Подпись сообщений
+    sign_and_encrypt;   % Подпись + шифрование
+
+% Типы сообщений
+sort MessageType = struct 
+    connect |           % Запрос на подключение
+    auth |              % Аутентификация
+    request |           % Рабочий запрос
+    response |          % Ответ
+    disconnect;         % Отключение
+
+% Статусы аутентификации
+sort AuthStatus = struct 
+    success |           % Успешная аутентификация
+    failure |           % Неудачная аутентификация
+    required;           % Требуется аутентификация
+
+% Типы пользователей
+sort UserType = struct 
+    anonymous |         % Анонимный пользователь
+    authenticated |     % Аутентифицированный пользователь
+    authorized;         % Авторизованный пользователь
+
+% Структуры сообщений
+sort SecurityMessage = struct 
+    sec_msg(MessageType, SecurityLevel, UserType);
+
+sort ApplicationMessage = struct 
+    app_msg(MessageType, Nat); % Nat - данные сообщения
+
+% Действия (Actions)
+
+% Прикладной уровень
+act % Клиент
+    client_connect,     % Клиент подключается
+    client_auth,        % Клиент аутентифицируется
+    client_request,     % Клиент отправляет запрос
+    client_response,    % Клиент получает ответ
+    client_disconnect,  % Клиент отключается
+    
+    % Сервер
+    server_accept,      % Сервер принимает подключение
+    server_auth_check,  % Сервер проверяет аутентификацию
+    server_process,     % Сервер обрабатывает запрос
+    server_reply,       % Сервер отправляет ответ
+    server_close;       % Сервер закрывает соединение
+
+% Сеансовый уровень
+act % Аутентификация
+    request_credentials,    % Запрос учетных данных
+    verify_credentials,     % Проверка учетных данных
+    grant_access,           % Предоставление доступа
+    deny_access,            % Отказ в доступе
+    
+    % Авторизация
+    check_permissions,      % Проверка разрешений
+    authorize_request,      % Авторизация запроса
+    reject_request;         % Отклонение запроса
+
+% Транспортный уровень
+act % Соединения
+    open_secure_channel,    % Открытие безопасного канала
+    close_secure_channel,   % Закрытие безопасного канала
+    
+    % Шифрование
+    encrypt_message,        % Шифрование сообщения
+    decrypt_message,        % Расшифровка сообщения
+    
+    % Передача
+    send_encrypted,         % Отправка зашифрованного сообщения
+    receive_encrypted;      % Получение зашифрованного сообщения
+
+% Сетевой уровень
+act % IP операции
+    establish_connection,   % Установка соединения
+    route_packet,           % Маршрутизация пакета
+    close_connection;       % Закрытие соединения
+
+% Процессы (Processes)
+
+% Прикладной уровень - Клиент OPC UA
+proc OPCUAClient = 
+    client_connect . 
+    client_auth . 
+    client_request . 
+    client_response . 
+    client_disconnect . 
+    OPCUAClient;
+
+% Прикладной уровень - Сервер OPC UA
+proc OPCUAServer = 
+    server_accept . 
+    server_auth_check . 
+    server_process . 
+    server_reply . 
+    server_close . 
+    OPCUAServer;
+
+% Сеансовый уровень - Управление безопасностью
+proc SecurityManager = 
+    request_credentials . 
+    (verify_credentials . grant_access + deny_access) . 
+    check_permissions . 
+    (authorize_request + reject_request) . 
+    SecurityManager;
+
+% Транспортный уровень - Безопасные соединения
+proc TransportLayer = 
+    open_secure_channel . 
+    (encrypt_message . send_encrypted . receive_encrypted . decrypt_message) . 
+    close_secure_channel . 
+    TransportLayer;
+
+% Сетевой уровень - IP соединения
+proc NetworkLayer = 
+    establish_connection . 
+    route_packet . 
+    close_connection . 
+    NetworkLayer;
+
+% Система OPC UA
+% Параллельное выполнение всех уровней
+proc OPCUASystem = 
+    OPCUAClient || 
+    OPCUAServer || 
+    SecurityManager || 
+    TransportLayer || 
+    NetworkLayer;
+
+% Инициализация системы
+init OPCUASystem;
+
+% Комментарии по сравнению с SPIN версией:
+%
+% 1. Архитектура:
+%    - SPIN: 4 процесса (Client, Security, Transport, Server)
+%    - mCRL2: 5 процессов (Client, Server, Security, Transport, Network)
+%
+% 2. Безопасность:
+%    - SPIN: простые флаги client_authenticated = 0
+%    - mCRL2: типизированные уровни SecurityLevel, UserType
+%
+% 3. Параллелизм:
+%    - SPIN: run OPCUAClient(); run SecurityLayer(); ...
+%    - mCRL2: OPCUAClient || SecurityManager || TransportLayer
+%
+% 4. Состояние:
+%    - SPIN: глобальные переменные int session_established = 0
+%    - mCRL2: состояние определяется структурой процесса
+%
+% 5. LTL свойства:
+%    - SPIN: ltl auth_required { [] (message_sent -> client_authenticated) }
+%    - mCRL2: µ-исчисление (будет добавлено позже)
+%
+% Преимущества mCRL2:
+% - Строгая типизация уровней безопасности
+% - Математически точная семантика параллелизма
+% - Автоматическая оптимизация иерархических процессов
+% - Мощные средства верификации сложных свойств
+%
+% Недостатки mCRL2:
+% - Более сложный синтаксис для сложных архитектур
+% - Меньше примеров для промышленных протоколов
+% - Сложность моделирования детального состояния
+%
+% Следующий шаг: добавление µ-исчисления для проверки свойств безопасности
+% и создание скриптов автоматизации для mCRL2
