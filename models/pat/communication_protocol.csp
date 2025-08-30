@@ -1,0 +1,162 @@
+-- PAT модель протокола связи на CSP
+-- Автор: Senior Developer
+-- Описание: Модель протокола с подтверждением, таймаутами и восстановлением
+
+-- Определение каналов связи
+channel send, receive, ack, timeout, retry, error, success;
+
+-- Процесс отправителя
+Sender = IDLE;
+IDLE = send -> SENDING;
+SENDING = receive -> WAITING_ACK;
+WAITING_ACK = ack -> IDLE;
+WAITING_ACK = timeout -> RETRYING;
+RETRYING = retry -> SENDING;
+RETRYING = error -> ERROR_STATE;
+ERROR_STATE = retry -> IDLE;
+
+-- Процесс получателя
+Receiver = IDLE;
+IDLE = receive -> PROCESSING;
+PROCESSING = ack -> IDLE;
+PROCESSING = error -> ERROR_HANDLING;
+ERROR_HANDLING = retry -> IDLE;
+
+-- Процесс канала связи (может быть ненадежным)
+Channel = CLEAR;
+CLEAR = send -> {CORRUPTED, LOST, CLEAR};
+CORRUPTED = receive -> CLEAR;
+LOST = timeout -> CLEAR;
+
+-- Процесс таймера
+Timer = RESET;
+RESET = send -> COUNTING;
+COUNTING = ack -> RESET;
+COUNTING = timeout -> EXPIRED;
+EXPIRED = retry -> RESET;
+
+-- Процесс системы в целом
+System = (Sender ||| Receiver ||| Channel ||| Timer) 
+         [|{|send, receive, ack, timeout, retry, error, success|}|] 
+         Environment;
+
+-- Процесс окружения (генератор событий)
+Environment = GenerateEvents;
+GenerateEvents = send -> GenerateEvents;
+GenerateEvents = timeout -> GenerateEvents;
+GenerateEvents = error -> GenerateEvents;
+
+-- Расширенная модель с несколькими сообщениями
+-- Процесс отправителя с очередью сообщений
+SenderWithQueue = IDLE_QUEUE;
+IDLE_QUEUE = send -> SENDING_QUEUE;
+SENDING_QUEUE = receive -> WAITING_ACK_QUEUE;
+WAITING_ACK_QUEUE = ack -> IDLE_QUEUE;
+WAITING_ACK_QUEUE = timeout -> RETRYING_QUEUE;
+RETRYING_QUEUE = retry -> SENDING_QUEUE;
+RETRYING_QUEUE = error -> ERROR_QUEUE;
+ERROR_QUEUE = retry -> IDLE_QUEUE;
+
+-- Процесс получателя с обработкой нескольких сообщений
+ReceiverWithQueue = IDLE_QUEUE;
+IDLE_QUEUE = receive -> PROCESSING_QUEUE;
+PROCESSING_QUEUE = ack -> IDLE_QUEUE;
+PROCESSING_QUEUE = error -> ERROR_HANDLING_QUEUE;
+ERROR_HANDLING_QUEUE = retry -> IDLE_QUEUE;
+
+-- Процесс планировщика сообщений
+MessageScheduler = SCHEDULE;
+SCHEDULE = send -> SCHEDULE;
+SCHEDULE = receive -> SCHEDULE;
+SCHEDULE = ack -> SCHEDULE;
+SCHEDULE = timeout -> SCHEDULE;
+
+-- Расширенная система с очередью
+ExtendedSystem = (SenderWithQueue ||| ReceiverWithQueue ||| MessageScheduler) 
+                 [|{|send, receive, ack, timeout, retry, error, success|}|] 
+                 ExtendedEnvironment;
+
+-- Расширенное окружение
+ExtendedEnvironment = GenerateExtendedEvents;
+GenerateExtendedEvents = send -> GenerateExtendedEvents;
+GenerateExtendedEvents = timeout -> GenerateExtendedEvents;
+GenerateExtendedEvents = error -> GenerateExtendedEvents;
+GenerateExtendedEvents = success -> GenerateExtendedEvents;
+
+-- Модель с приоритетами сообщений
+-- Процесс отправителя с приоритетами
+PrioritySender = IDLE_PRIORITY;
+IDLE_PRIORITY = send_high -> SENDING_HIGH;
+IDLE_PRIORITY = send_low -> SENDING_LOW;
+SENDING_HIGH = receive -> WAITING_ACK_HIGH;
+SENDING_LOW = receive -> WAITING_ACK_LOW;
+WAITING_ACK_HIGH = ack -> IDLE_PRIORITY;
+WAITING_ACK_LOW = ack -> IDLE_PRIORITY;
+WAITING_ACK_HIGH = timeout -> RETRYING_HIGH;
+WAITING_ACK_LOW = timeout -> RETRYING_LOW;
+RETRYING_HIGH = retry -> SENDING_HIGH;
+RETRYING_LOW = retry -> SENDING_LOW;
+
+-- Процесс получателя с приоритетами
+PriorityReceiver = IDLE_PRIORITY;
+IDLE_PRIORITY = receive -> PROCESSING_PRIORITY;
+PROCESSING_PRIORITY = ack -> IDLE_PRIORITY;
+PROCESSING_PRIORITY = error -> ERROR_HANDLING_PRIORITY;
+ERROR_HANDLING_PRIORITY = retry -> IDLE_PRIORITY;
+
+-- Система с приоритетами
+PrioritySystem = (PrioritySender ||| PriorityReceiver) 
+                [|{|send_high, send_low, receive, ack, timeout, retry, error|}|] 
+                PriorityEnvironment;
+
+-- Окружение с приоритетами
+PriorityEnvironment = GeneratePriorityEvents;
+GeneratePriorityEvents = send_high -> GeneratePriorityEvents;
+GeneratePriorityEvents = send_low -> GeneratePriorityEvents;
+GeneratePriorityEvents = timeout -> GeneratePriorityEvents;
+GeneratePriorityEvents = error -> GeneratePriorityEvents;
+
+-- Модель с восстановлением после сбоев
+-- Процесс отправителя с восстановлением
+RecoverySender = IDLE_RECOVERY;
+IDLE_RECOVERY = send -> SENDING_RECOVERY;
+SENDING_RECOVERY = receive -> WAITING_ACK_RECOVERY;
+WAITING_ACK_RECOVERY = ack -> IDLE_RECOVERY;
+WAITING_ACK_RECOVERY = timeout -> RETRYING_RECOVERY;
+RETRYING_RECOVERY = retry -> SENDING_RECOVERY;
+RETRYING_RECOVERY = error -> RECOVERING;
+RECOVERING = retry -> IDLE_RECOVERY;
+
+-- Процесс получателя с восстановлением
+RecoveryReceiver = IDLE_RECOVERY;
+IDLE_RECOVERY = receive -> PROCESSING_RECOVERY;
+PROCESSING_RECOVERY = ack -> IDLE_RECOVERY;
+PROCESSING_RECOVERY = error -> RECOVERING_RECEIVER;
+RECOVERING_RECEIVER = retry -> IDLE_RECOVERY;
+
+-- Система с восстановлением
+RecoverySystem = (RecoverySender ||| RecoveryReceiver) 
+                [|{|send, receive, ack, timeout, retry, error|}|] 
+                RecoveryEnvironment;
+
+-- Окружение с восстановлением
+RecoveryEnvironment = GenerateRecoveryEvents;
+GenerateRecoveryEvents = send -> GenerateRecoveryEvents;
+GenerateRecoveryEvents = timeout -> GenerateRecoveryEvents;
+GenerateRecoveryEvents = error -> GenerateRecoveryEvents;
+
+-- Главная система (выберите одну из моделей)
+MainSystem = System;
+
+-- Спецификации для проверки
+-- Спецификация безопасности: отправитель не должен отправлять без получателя
+#assert MainSystem deadlockfree;
+
+-- Спецификация живости: каждое сообщение должно быть доставлено
+#assert MainSystem [F send] W [F receive];
+
+-- Спецификация корректности: подтверждение должно следовать за получением
+#assert MainSystem [F receive] W [F ack];
+
+-- Спецификация восстановления: ошибки должны приводить к восстановлению
+#assert MainSystem [F error] W [F retry];

@@ -1,0 +1,266 @@
+-- SAL модель системы реального времени
+-- Автор: Senior Developer
+-- Описание: Модель системы с задачами, приоритетами, дедлайнами и планировщиком
+
+real_time_system: CONTEXT =
+BEGIN
+    -- Типы данных
+    task_id: TYPE = {task1, task2, task3, task4, task5};
+    task_state: TYPE = {READY, RUNNING, BLOCKED, COMPLETED, MISSED_DEADLINE};
+    priority_level: TYPE = {LOW, MEDIUM, HIGH, CRITICAL};
+    
+    -- Структура задачи
+    task_record: TYPE = [
+        id: task_id,
+        state: task_state,
+        priority: priority_level,
+        execution_time: NATURAL,
+        deadline: NATURAL,
+        period: NATURAL,
+        remaining_time: NATURAL,
+        arrival_time: NATURAL
+    ];
+    
+    -- Модуль планировщика реального времени
+    scheduler: MODULE =
+    BEGIN
+        OUTPUT
+            current_task: task_id,
+            system_time: NATURAL,
+            ready_queue: ARRAY task_id OF BOOLEAN,
+            blocked_queue: ARRAY task_id OF BOOLEAN,
+            completed_tasks: ARRAY task_id OF BOOLEAN,
+            missed_deadlines: ARRAY task_id OF BOOLEAN
+            
+        LOCAL
+            task_list: ARRAY task_id OF task_record,
+            cpu_utilization: REAL,
+            context_switches: NATURAL
+            
+        INITIALIZATION
+            system_time = 0;
+            context_switches = 0;
+            cpu_utilization = 0.0;
+            
+            -- Инициализация задач
+            task_list = LAMBDA (t: task_id): 
+                CASE t OF
+                    task1: [id := task1, state := READY, priority := CRITICAL, 
+                           execution_time := 10, deadline := 50, period := 100, 
+                           remaining_time := 10, arrival_time := 0],
+                    task2: [id := task2, state := READY, priority := HIGH, 
+                           execution_time := 15, deadline := 80, period := 150, 
+                           remaining_time := 15, arrival_time := 5],
+                    task3: [id := task3, state := READY, priority := MEDIUM, 
+                           execution_time := 20, deadline := 120, period := 200, 
+                           remaining_time := 20, arrival_time := 10],
+                    task4: [id := task4, state := READY, priority := LOW, 
+                           execution_time := 25, deadline := 200, period := 300, 
+                           remaining_time := 25, arrival_time := 15],
+                    task5: [id := task5, state := READY, priority := MEDIUM, 
+                           execution_time := 12, deadline := 90, period := 180, 
+                           remaining_time := 12, arrival_time := 20]
+                ENDCASE;
+                
+        TRANSITION [
+            -- Выбор следующей задачи для выполнения
+            current_task = task1 OR current_task = task2 OR current_task = task3 OR 
+            current_task = task4 OR current_task = task5 -->
+                current_task' = SELECT_HIGHEST_PRIORITY_READY_TASK();
+                context_switches' = context_switches + 1;
+                
+            -- Выполнение текущей задачи
+            task_list(current_task).state = RUNNING AND 
+            task_list(current_task).remaining_time > 0 -->
+                task_list' = task_list WITH [current_task].remaining_time := 
+                    task_list(current_task).remaining_time - 1;
+                system_time' = system_time + 1;
+                
+            -- Завершение задачи
+            task_list(current_task).state = RUNNING AND 
+            task_list(current_task).remaining_time = 0 -->
+                task_list' = task_list WITH [current_task].state := COMPLETED;
+                completed_tasks' = completed_tasks WITH [current_task] := TRUE;
+                current_task' = SELECT_HIGHEST_PRIORITY_READY_TASK();
+                
+            -- Проверка дедлайнов
+            system_time >= task_list(current_task).deadline AND 
+            task_list(current_task).state /= COMPLETED -->
+                task_list' = task_list WITH [current_task].state := MISSED_DEADLINE;
+                missed_deadlines' = missed_deadlines WITH [current_task] := TRUE;
+                
+            -- Периодическое возобновление задач
+            system_time MOD task_list(current_task).period = 0 AND 
+            task_list(current_task).state = COMPLETED -->
+                task_list' = task_list WITH 
+                    [current_task].state := READY,
+                    [current_task].remaining_time := task_list(current_task).execution_time,
+                    [current_task].deadline := system_time + task_list(current_task).deadline;
+                    
+            -- Блокировка задачи (например, ожидание ресурса)
+            task_list(current_task).state = RUNNING AND 
+            RANDOM_BLOCKING_EVENT() -->
+                task_list' = task_list WITH [current_task].state := BLOCKED;
+                blocked_queue' = blocked_queue WITH [current_task] := TRUE;
+                current_task' = SELECT_HIGHEST_PRIORITY_READY_TASK();
+                
+            -- Разблокировка задачи
+            task_list(current_task).state = BLOCKED AND 
+            RANDOM_UNBLOCKING_EVENT() -->
+                task_list' = task_list WITH [current_task].state := READY;
+                blocked_queue' = blocked_queue WITH [current_task] := FALSE;
+                
+            -- Обновление статистики
+            system_time MOD 100 = 0 -->
+                cpu_utilization' = CALCULATE_CPU_UTILIZATION();
+        ]
+        
+        -- Вспомогательные функции
+        SELECT_HIGHEST_PRIORITY_READY_TASK(): task_id =
+            SELECT t: task_id SUCH THAT 
+                task_list(t).state = READY AND
+                FORALL (t2: task_id): 
+                    task_list(t2).state = READY IMPLIES 
+                    PRIORITY_VALUE(task_list(t).priority) >= PRIORITY_VALUE(task_list(t2).priority);
+                    
+        PRIORITY_VALUE(p: priority_level): NATURAL =
+            CASE p OF
+                CRITICAL: 4,
+                HIGH: 3,
+                MEDIUM: 2,
+                LOW: 1
+            ENDCASE;
+            
+        CALCULATE_CPU_UTILIZATION(): REAL =
+            LET total_time = system_time IN
+            LET busy_time = COUNT(LAMBDA (t: task_id): 
+                task_list(t).state = RUNNING) IN
+            IF total_time > 0 THEN
+                REAL(busy_time) / REAL(total_time)
+            ELSE
+                0.0
+            ENDIF;
+            
+        RANDOM_BLOCKING_EVENT(): BOOLEAN =
+            -- Симуляция случайных событий блокировки
+            system_time MOD 50 = 0;
+            
+        RANDOM_UNBLOCKING_EVENT(): BOOLEAN =
+            -- Симуляция случайных событий разблокировки
+            system_time MOD 30 = 0;
+            
+        INVARIANT
+            -- Инварианты безопасности
+            FORALL (t: task_id): 
+                task_list(t).state = RUNNING IMPLIES 
+                task_list(t).remaining_time > 0;
+                
+            FORALL (t: task_id): 
+                task_list(t).state = COMPLETED IMPLIES 
+                task_list(t).remaining_time = 0;
+                
+            -- Приоритеты должны соблюдаться
+            FORALL (t1, t2: task_id): 
+                task_list(t1).state = RUNNING AND 
+                task_list(t2).state = READY IMPLIES
+                PRIORITY_VALUE(task_list(t1).priority) >= PRIORITY_VALUE(task_list(t2).priority);
+                
+    END;
+    
+    -- Модуль мониторинга производительности
+    performance_monitor: MODULE =
+    BEGIN
+        OUTPUT
+            response_times: ARRAY task_id OF NATURAL,
+            throughput: REAL,
+            deadline_miss_rate: REAL
+            
+        LOCAL
+            total_completed: NATURAL,
+            total_missed: NATURAL
+            
+        INITIALIZATION
+            total_completed = 0;
+            total_missed = 0;
+            
+        TRANSITION [
+            -- Обновление статистики производительности
+            scheduler.completed_tasks(current_task) AND 
+            !response_times(current_task) > 0 -->
+                response_times' = response_times WITH [current_task] := 
+                    scheduler.system_time - scheduler.task_list(current_task).arrival_time;
+                total_completed' = total_completed + 1;
+                
+            -- Обновление статистики пропущенных дедлайнов
+            scheduler.missed_deadlines(current_task) -->
+                total_missed' = total_missed + 1;
+                
+            -- Расчет throughput
+            total_completed > 0 -->
+                throughput' = REAL(total_completed) / REAL(scheduler.system_time);
+                
+            -- Расчет rate пропущенных дедлайнов
+            total_completed + total_missed > 0 -->
+                deadline_miss_rate' = REAL(total_missed) / REAL(total_completed + total_missed);
+        ]
+        
+        INVARIANT
+            total_completed >= 0;
+            total_missed >= 0;
+            deadline_miss_rate <= 1.0;
+            
+    END;
+    
+    -- Главный модуль системы
+    main: MODULE =
+    BEGIN
+        OUTPUT
+            system_healthy: BOOLEAN,
+            real_time_constraints_met: BOOLEAN
+            
+        LOCAL
+            health_check_timer: NATURAL
+            
+        INITIALIZATION
+            system_healthy = TRUE;
+            real_time_constraints_met = TRUE;
+            health_check_timer = 0;
+            
+        TRANSITION [
+            -- Проверка здоровья системы
+            health_check_timer >= 1000 -->
+                health_check_timer' = 0;
+                system_healthy' = performance_monitor.deadline_miss_rate < 0.1;
+                real_time_constraints_met' = system_healthy;
+                
+            -- Обновление таймера
+            TRUE -->
+                health_check_timer' = health_check_timer + 1;
+        ]
+        
+        INVARIANT
+            system_healthy IMPLIES real_time_constraints_met;
+            
+    END;
+    
+    -- Спецификации системы реального времени
+    SPECIFICATION
+        -- Безопасность: критические задачи не должны пропускать дедлайны
+        AG(scheduler.task_list(task1).state = MISSED_DEADLINE IMPLIES 
+           scheduler.task_list(task1).priority /= CRITICAL);
+        
+        -- Живость: все задачи должны выполняться
+        AG(scheduler.task_list(task1).state = READY IMPLIES 
+           EF(scheduler.task_list(task1).state = COMPLETED));
+        
+        -- Приоритеты: высокоприоритетные задачи должны выполняться раньше
+        AG(scheduler.task_list(task1).priority = CRITICAL AND 
+           scheduler.task_list(task2).priority = LOW IMPLIES
+           scheduler.task_list(task1).state = RUNNING OR 
+           scheduler.task_list(task1).state = COMPLETED);
+        
+        -- Временные ограничения: система должна работать в реальном времени
+        AG(performance_monitor.deadline_miss_rate > 0.2 IMPLIES 
+           EF(main.system_healthy = FALSE));
+        
+END;

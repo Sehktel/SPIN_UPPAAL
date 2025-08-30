@@ -1,0 +1,235 @@
+-- Специализированная модель EtherCAT slave для LTSA
+-- Моделирует EtherCAT slave устройство с обработкой команд и синхронизацией
+
+-- Диапазоны состояний и значений
+range ID = 0..255
+range ADDRESS = 0..65535
+range DATA_SIZE = 0..1024
+range TIMEOUT = 0..1000
+range SYNC_CYCLE = 0..100
+range ERROR_CODE = 0..15
+
+-- Состояния EtherCAT slave
+EtherCATSlave = INIT -> SlaveState,
+SlaveState = IDLE | OPERATIONAL | SAFE_OP | PRE_OP | BOOT | ERROR_STATE.
+
+-- Основные процессы slave устройства
+INIT = (init_complete -> SlaveState),
+SlaveState = IDLE | OPERATIONAL | SAFE_OP | PRE_OP | BOOT | ERROR_STATE.
+
+-- Состояние IDLE
+IDLE = (start_boot -> BOOT) | (emergency_stop -> ERROR_STATE),
+BOOT = (boot_complete -> PRE_OP) | (boot_failed -> ERROR_STATE),
+PRE_OP = (init_op -> SAFE_OP) | (config_error -> ERROR_STATE),
+SAFE_OP = (enable_op -> OPERATIONAL) | (safety_violation -> ERROR_STATE),
+OPERATIONAL = (disable_op -> SAFE_OP) | (sync_error -> ERROR_STATE) | (process_data -> OPERATIONAL),
+ERROR_STATE = (reset -> IDLE) | (error_recovery -> SAFE_OP).
+
+-- Процесс обработки команд EtherCAT
+CommandProcessor = (read_command | write_command | sync_command | broadcast_command) -> 
+                   (validate_command -> (execute_command | reject_command)) -> 
+                   (send_response | send_error) -> CommandProcessor.
+
+-- Чтение данных
+read_command = read_holding_registers | read_input_registers | read_coils | read_discrete_inputs,
+read_holding_registers = read_hr[ID][ADDRESS][DATA_SIZE],
+read_input_registers = read_ir[ID][ADDRESS][DATA_SIZE],
+read_coils = read_co[ID][ADDRESS][DATA_SIZE],
+read_discrete_inputs = read_di[ID][ADDRESS][DATA_SIZE].
+
+-- Запись данных
+write_command = write_single_register | write_multiple_registers | write_single_coil | write_multiple_coils,
+write_single_register = write_sr[ID][ADDRESS],
+write_multiple_registers = write_mr[ID][ADDRESS][DATA_SIZE],
+write_single_coil = write_sc[ID][ADDRESS],
+write_multiple_coils = write_mc[ID][ADDRESS][DATA_SIZE].
+
+-- Синхронизация
+sync_command = sync_start | sync_stop | sync_reset,
+sync_start = sync_start[SYNC_CYCLE],
+sync_stop = sync_stop[SYNC_CYCLE],
+sync_reset = sync_reset[SYNC_CYCLE].
+
+-- Широковещательные команды
+broadcast_command = broadcast_read | broadcast_write | broadcast_sync,
+broadcast_read = bcast_read[ADDRESS][DATA_SIZE],
+broadcast_write = bcast_write[ADDRESS][DATA_SIZE],
+broadcast_sync = bcast_sync[SYNC_CYCLE].
+
+-- Валидация команд
+validate_command = (check_address | check_data_size | check_permissions | check_sync_state),
+check_address = (valid_address | invalid_address),
+check_data_size = (valid_size | invalid_size),
+check_permissions = (permission_granted | permission_denied),
+check_sync_state = (sync_ready | sync_not_ready).
+
+-- Выполнение команд
+execute_command = (read_success | write_success | sync_success),
+read_success = read_ok[ID][ADDRESS][DATA_SIZE],
+write_success = write_ok[ID][ADDRESS][DATA_SIZE],
+sync_success = sync_ok[SYNC_CYCLE].
+
+-- Отклонение команд
+reject_command = (reject_invalid_address | reject_invalid_data | reject_no_permission | reject_sync_error),
+reject_invalid_address = reject_addr[ID][ADDRESS],
+reject_invalid_data = reject_data[ID][DATA_SIZE],
+reject_no_permission = reject_perm[ID],
+reject_sync_error = reject_sync[ID][SYNC_CYCLE].
+
+-- Отправка ответов
+send_response = (send_read_response | send_write_response | send_sync_response),
+send_read_response = read_response[ID][ADDRESS][DATA_SIZE],
+send_write_response = write_response[ID][ADDRESS][DATA_SIZE],
+send_sync_response = sync_response[ID][SYNC_CYCLE].
+
+-- Отправка ошибок
+send_error = (send_timeout_error | send_validation_error | send_execution_error | send_sync_error),
+send_timeout_error = timeout_error[ID][TIMEOUT],
+send_validation_error = validation_error[ID][ERROR_CODE],
+send_execution_error = execution_error[ID][ERROR_CODE],
+send_sync_error = sync_error[ID][SYNC_CYCLE].
+
+-- Процесс обработки данных в реальном времени
+RealTimeDataProcessor = (input_data_arrival | output_data_request) -> 
+                        (process_input_data | prepare_output_data) -> 
+                        (data_ready | data_not_ready) -> RealTimeDataProcessor.
+
+-- Приход входных данных
+input_data_arrival = input_data[ID][ADDRESS][DATA_SIZE],
+output_data_request = output_request[ID][ADDRESS][DATA_SIZE].
+
+-- Обработка данных
+process_input_data = (validate_input | filter_input | scale_input | convert_input),
+validate_input = (input_valid | input_invalid),
+filter_input = (filter_ok | filter_failed),
+scale_input = (scale_ok | scale_failed),
+convert_input = (convert_ok | convert_failed).
+
+-- Подготовка выходных данных
+prepare_output_data = (validate_output | format_output | buffer_output | transmit_output),
+validate_output = (output_valid | output_invalid),
+format_output = (format_ok | format_failed),
+buffer_output = (buffer_ok | buffer_failed),
+transmit_output = (transmit_ok | transmit_failed).
+
+-- Состояние данных
+data_ready = data_ready[ID][ADDRESS],
+data_not_ready = data_not_ready[ID][ADDRESS].
+
+-- Процесс синхронизации
+SynchronizationManager = (sync_master_request | sync_slave_response) -> 
+                          (sync_phase1 | sync_phase2 | sync_phase3) -> 
+                          (sync_complete | sync_failed) -> SynchronizationManager.
+
+-- Запрос синхронизации от мастера
+sync_master_request = sync_request[SYNC_CYCLE],
+sync_slave_response = sync_response[SYNC_CYCLE].
+
+-- Фазы синхронизации
+sync_phase1 = (sync1_start | sync1_process | sync1_complete),
+sync_phase2 = (sync2_start | sync2_process | sync2_complete),
+sync_phase3 = (sync3_start | sync3_process | sync3_complete).
+
+-- Результат синхронизации
+sync_complete = sync_success[SYNC_CYCLE],
+sync_failed = sync_failure[SYNC_CYCLE].
+
+-- Процесс управления состоянием
+StateManager = (state_transition | state_validation | state_recovery) -> 
+               (state_changed | state_unchanged) -> StateManager.
+
+-- Переход состояния
+state_transition = (to_idle | to_boot | to_pre_op | to_safe_op | to_operational | to_error),
+to_idle = transition_to_idle[ID],
+to_boot = transition_to_boot[ID],
+to_pre_op = transition_to_pre_op[ID],
+to_safe_op = transition_to_safe_op[ID],
+to_operational = transition_to_operational[ID],
+to_error = transition_to_error[ID].
+
+-- Валидация состояния
+state_validation = (validate_current_state | validate_target_state | validate_transition),
+validate_current_state = (current_state_valid | current_state_invalid),
+validate_target_state = (target_state_valid | target_state_invalid),
+validate_transition = (transition_valid | transition_invalid).
+
+-- Восстановление состояния
+state_recovery = (recovery_start | recovery_process | recovery_complete),
+recovery_start = recovery_init[ID],
+recovery_process = recovery_step[ID],
+recovery_complete = recovery_finish[ID].
+
+-- Результат изменения состояния
+state_changed = state_change_success[ID],
+state_unchanged = state_change_failed[ID].
+
+-- Процесс обработки ошибок
+ErrorHandler = (error_detection | error_classification | error_response | error_recovery) -> 
+               (error_handled | error_not_handled) -> ErrorHandler.
+
+-- Обнаружение ошибок
+error_detection = (detect_timeout | detect_validation | detect_execution | detect_sync),
+detect_timeout = timeout_detected[ID][TIMEOUT],
+detect_validation = validation_error_detected[ID][ERROR_CODE],
+detect_execution = execution_error_detected[ID][ERROR_CODE],
+detect_sync = sync_error_detected[ID][SYNC_CYCLE].
+
+-- Классификация ошибок
+error_classification = (classify_critical | classify_warning | classify_info | classify_debug),
+classify_critical = critical_error[ID][ERROR_CODE],
+classify_warning = warning_error[ID][ERROR_CODE],
+classify_info = info_error[ID][ERROR_CODE],
+classify_debug = debug_error[ID][ERROR_CODE].
+
+-- Ответ на ошибку
+error_response = (respond_immediate | respond_delayed | respond_ignored),
+respond_immediate = immediate_response[ID],
+respond_delayed = delayed_response[ID],
+respond_ignored = ignored_response[ID].
+
+-- Восстановление после ошибки
+error_recovery = (recovery_automatic | recovery_manual | recovery_none),
+recovery_automatic = auto_recovery[ID],
+recovery_manual = manual_recovery[ID],
+recovery_none = no_recovery[ID].
+
+-- Результат обработки ошибки
+error_handled = error_resolved[ID],
+error_not_handled = error_pending[ID].
+
+-- Основная система EtherCAT slave
+EtherCATSlaveSystem = EtherCATSlave || CommandProcessor || RealTimeDataProcessor || 
+                      SynchronizationManager || StateManager || ErrorHandler.
+
+-- Свойства безопасности и корректности
+property SAFETY = [emergency_stop] -> [ERROR_STATE].
+property OPERATIONAL_SAFETY = [enable_op] -> [OPERATIONAL].
+property ERROR_RECOVERY = [ERROR_STATE] -> <reset>.
+property SYNC_CORRECTNESS = [sync_start] -> <sync_complete>.
+property COMMAND_VALIDATION = [read_command] -> <validate_command>.
+property DATA_PROCESSING = [input_data_arrival] -> <data_ready>.
+property STATE_CONSISTENCY = [state_transition] -> <state_changed>.
+property ERROR_HANDLING = [error_detection] -> <error_handled>.
+
+-- Расширенная система с множественными slave устройствами
+range SLAVE_COUNT = 1..4
+range SLAVE_ID = 1..4
+
+-- Множественные slave устройства
+MultipleSlaves = (SLAVE_ID: SLAVE_ID) @ SLAVE_ID,
+SLAVE_ID = EtherCATSlaveSystem.
+
+-- Мастер устройство
+EtherCATMaster = (master_init | master_config | master_control | master_monitor) -> EtherCATMaster,
+master_init = init_master,
+master_config = config_slaves[SLAVE_COUNT],
+master_control = control_slaves[SLAVE_COUNT],
+master_monitor = monitor_slaves[SLAVE_COUNT].
+
+-- Полная система EtherCAT
+CompleteEtherCATSystem = EtherCATMaster || MultipleSlaves.
+
+-- Свойства для полной системы
+property MASTER_SLAVE_SYNC = [master_config] -> <sync_complete>.
+property SLAVE_INDEPENDENCE = [SLAVE_ID: SLAVE_ID] @ [state_transition] -> <state_changed>.
+property SYSTEM_SCALABILITY = [SLAVE_COUNT: SLAVE_COUNT] @ [init_complete] -> <boot_complete>.

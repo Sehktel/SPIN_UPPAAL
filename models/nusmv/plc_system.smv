@@ -1,0 +1,125 @@
+-- NuSMV модель PLC системы управления насосами
+-- Автор: Senior Developer
+-- Описание: Модель системы с несколькими насосами, датчиками и системой безопасности
+
+MODULE main
+VAR
+    -- Состояния насосов
+    pump1_state: {OFF, STARTING, RUNNING, STOPPING, ERROR};
+    pump2_state: {OFF, STARTING, RUNNING, STOPPING, ERROR};
+    
+    -- Датчики уровня
+    tank1_level: 0..100;
+    tank2_level: 0..100;
+    
+    -- Датчики давления
+    pressure1: 0..10;
+    pressure2: 0..10;
+    
+    -- Система безопасности
+    emergency_stop: boolean;
+    safety_system_ok: boolean;
+    
+    -- Таймеры
+    startup_timer: 0..30;
+    shutdown_timer: 0..20;
+    
+    -- Команды управления
+    start_pump1: boolean;
+    start_pump2: boolean;
+    stop_pump1: boolean;
+    stop_pump2: boolean;
+
+ASSIGN
+    -- Инициализация
+    init(pump1_state) := OFF;
+    init(pump2_state) := OFF;
+    init(tank1_level) := 50;
+    init(tank2_level) := 30;
+    init(pressure1) := 0;
+    init(pressure2) := 0;
+    init(emergency_stop) := FALSE;
+    init(safety_system_ok) := TRUE;
+    init(startup_timer) := 0;
+    init(shutdown_timer) := 0;
+    
+    -- Логика управления насосом 1
+    next(pump1_state) := case
+        emergency_stop | !safety_system_ok: ERROR;
+        pump1_state = OFF & start_pump1 & tank1_level > 20: STARTING;
+        pump1_state = STARTING & startup_timer >= 25: RUNNING;
+        pump1_state = RUNNING & (stop_pump1 | tank1_level <= 5): STOPPING;
+        pump1_state = STOPPING & shutdown_timer >= 15: OFF;
+        pump1_state = ERROR & !emergency_stop & safety_system_ok: OFF;
+        TRUE: pump1_state;
+    esac;
+    
+    -- Логика управления насосом 2
+    next(pump2_state) := case
+        emergency_stop | !safety_system_ok: ERROR;
+        pump2_state = OFF & start_pump2 & tank2_level > 15: STARTING;
+        pump2_state = STARTING & startup_timer >= 25: RUNNING;
+        pump2_state = RUNNING & (stop_pump2 | tank2_level <= 3): STOPPING;
+        pump2_state = STOPPING & shutdown_timer >= 15: OFF;
+        pump2_state = ERROR & !emergency_stop & safety_system_ok: OFF;
+        TRUE: pump2_state;
+    esac;
+    
+    -- Изменение уровня в резервуарах
+    next(tank1_level) := case
+        pump1_state = RUNNING: max(0, tank1_level - 2);
+        pump1_state = OFF & tank1_level < 100: min(100, tank1_level + 1);
+        TRUE: tank1_level;
+    esac;
+    
+    next(tank2_level) := case
+        pump2_state = RUNNING: max(0, tank2_level - 1);
+        pump2_state = OFF & tank2_level < 100: min(100, tank2_level + 1);
+        TRUE: tank2_level;
+    esac;
+    
+    -- Изменение давления
+    next(pressure1) := case
+        pump1_state = STARTING: min(10, pressure1 + 1);
+        pump1_state = RUNNING: 8;
+        pump1_state = STOPPING: max(0, pressure1 - 1);
+        pump1_state = OFF | pump1_state = ERROR: 0;
+        TRUE: pressure1;
+    esac;
+    
+    next(pressure2) := case
+        pump2_state = STARTING: min(10, pressure2 + 1);
+        pump2_state = RUNNING: 6;
+        pump2_state = STOPPING: max(0, pressure2 - 1);
+        pump2_state = OFF | pump2_state = ERROR: 0;
+        TRUE: pressure2;
+    esac;
+    
+    -- Таймеры
+    next(startup_timer) := case
+        pump1_state = STARTING | pump2_state = STARTING: min(30, startup_timer + 1);
+        pump1_state = RUNNING & pump2_state = RUNNING: 0;
+        TRUE: startup_timer;
+    esac;
+    
+    next(shutdown_timer) := case
+        pump1_state = STOPPING | pump2_state = STOPPING: min(20, shutdown_timer + 1);
+        pump1_state = OFF & pump2_state = OFF: 0;
+        TRUE: shutdown_timer;
+    esac;
+
+-- Спецификации безопасности
+SPEC AG(emergency_stop -> AX(pump1_state = ERROR & pump2_state = ERROR))
+SPEC AG(tank1_level <= 5 -> AX(pump1_state = STOPPING | pump1_state = OFF))
+SPEC AG(tank2_level <= 3 -> AX(pump2_state = STOPPING | pump2_state = OFF))
+SPEC AG(!safety_system_ok -> AX(pump1_state = ERROR & pump2_state = ERROR))
+
+-- Спецификации производительности
+SPEC AG(pump1_state = RUNNING -> tank1_level > 0)
+SPEC AG(pump2_state = RUNNING -> tank2_level > 0)
+SPEC AG(pump1_state = STARTING -> startup_timer <= 30)
+SPEC AG(pump1_state = STOPPING -> shutdown_timer <= 20)
+
+-- Спецификации взаимного исключения
+SPEC AG(!(pump1_state = STARTING & pump2_state = STARTING))
+SPEC AG(!(pump1_state = STOPPING & pump2_state = STOPPING))

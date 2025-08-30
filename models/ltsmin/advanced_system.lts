@@ -1,0 +1,458 @@
+# LTSmin модель продвинутой системы
+# Автор: Senior Developer
+# Описание: Модель системы с несколькими компонентами, синхронизацией и сложной логикой
+
+# Определение типов состояний
+type PumpState = enum {STOPPED, STARTING, RUNNING, STOPPING, ERROR, MAINTENANCE};
+type ValveState = enum {CLOSED, OPENING, OPEN, CLOSING, ERROR_VALVE, MAINTENANCE_VALVE};
+type SensorState = enum {OK, CALIBRATING, ERROR_SENSOR, OFFLINE};
+type SystemMode = enum {INITIALIZATION, OPERATIONAL, EMERGENCY, SHUTDOWN, MAINTENANCE_MODE};
+type PriorityLevel = enum {LOW, MEDIUM, HIGH, CRITICAL};
+
+# Определение переменных системы
+var pump1_state: PumpState;
+var pump2_state: PumpState;
+var valve1_state: ValveState;
+var valve2_state: ValveState;
+var temp_sensor_state: SensorState;
+var pressure_sensor_state: SensorState;
+var humidity_sensor_state: SensorState;
+var system_mode: SystemMode;
+var emergency_active: bool;
+var maintenance_mode: bool;
+var pump1_pressure: int;
+var pump2_pressure: int;
+var tank1_level: int;
+var tank2_level: int;
+var system_health: int;
+var error_count: int;
+var active_alarms: int;
+var pending_tasks: int;
+var startup_timer: int;
+var shutdown_timer: int;
+var sync_timer: int;
+
+# Инициализация системы
+init
+    pump1_state = STOPPED;
+    pump2_state = STOPPED;
+    valve1_state = CLOSED;
+    valve2_state = CLOSED;
+    temp_sensor_state = OK;
+    pressure_sensor_state = OK;
+    humidity_sensor_state = OK;
+    system_mode = INITIALIZATION;
+    emergency_active = false;
+    maintenance_mode = false;
+    pump1_pressure = 0;
+    pump2_pressure = 0;
+    tank1_level = 500;
+    tank2_level = 300;
+    system_health = 100;
+    error_count = 0;
+    active_alarms = 0;
+    pending_tasks = 0;
+    startup_timer = 0;
+    shutdown_timer = 0;
+    sync_timer = 0;
+
+# Правила переходов для насоса 1
+rule "Start Pump 1" =
+    pump1_state = STOPPED &
+    system_mode = OPERATIONAL &
+    !emergency_active &
+    temp_sensor_state = OK &
+    pressure_sensor_state = OK &
+    tank1_level > 100
+    ->
+    pump1_state := STARTING;
+    pending_tasks := pending_tasks + 1;
+
+rule "Pump 1 Starting to Running" =
+    pump1_state = STARTING &
+    startup_timer >= 25
+    ->
+    pump1_state := RUNNING;
+    startup_timer := 0;
+
+rule "Stop Pump 1" =
+    pump1_state = RUNNING &
+    (tank1_level <= 5 | emergency_active)
+    ->
+    pump1_state := STOPPING;
+    pump1_pressure := 0;
+
+rule "Pump 1 Stopping to Stopped" =
+    pump1_state = STOPPING &
+    shutdown_timer >= 15
+    ->
+    pump1_state := STOPPED;
+    shutdown_timer := 0;
+
+rule "Pump 1 Error" =
+    pump1_state = RUNNING &
+    (pump1_pressure > 100 | emergency_active)
+    ->
+    pump1_state := ERROR;
+    error_count := error_count + 1;
+    system_health := system_health - 10;
+
+rule "Pump 1 Recovery" =
+    pump1_state = ERROR &
+    !emergency_active &
+    system_health > 50
+    ->
+    pump1_state := STOPPED;
+    system_health := system_health + 5;
+
+# Правила переходов для насоса 2
+rule "Start Pump 2" =
+    pump2_state = STOPPED &
+    system_mode = OPERATIONAL &
+    !emergency_active &
+    temp_sensor_state = OK &
+    pressure_sensor_state = OK &
+    tank2_level > 100
+    ->
+    pump2_state := STARTING;
+    pending_tasks := pending_tasks + 1;
+
+rule "Pump 2 Starting to Running" =
+    pump2_state = STARTING &
+    startup_timer >= 25
+    ->
+    pump2_state := RUNNING;
+    startup_timer := 0;
+
+rule "Stop Pump 2" =
+    pump2_state = RUNNING &
+    (tank2_level <= 3 | emergency_active)
+    ->
+    pump2_state := STOPPING;
+    pump2_pressure := 0;
+
+rule "Pump 2 Stopping to Stopped" =
+    pump2_state = STOPPING &
+    shutdown_timer >= 15
+    ->
+    pump2_state := STOPPED;
+    shutdown_timer := 0;
+
+rule "Pump 2 Error" =
+    pump2_state = RUNNING &
+    (pump2_pressure > 100 | emergency_active)
+    ->
+    pump2_state := ERROR;
+    error_count := error_count + 1;
+    system_health := system_health - 10;
+
+rule "Pump 2 Recovery" =
+    pump2_state = ERROR &
+    !emergency_active &
+    system_health > 50
+    ->
+    pump2_state := STOPPED;
+    system_health := system_health + 5;
+
+# Правила переходов для клапана 1
+rule "Open Valve 1" =
+    valve1_state = CLOSED &
+    tank1_level > 0 &
+    system_mode = OPERATIONAL &
+    !emergency_active
+    ->
+    valve1_state := OPENING;
+    pending_tasks := pending_tasks + 1;
+
+rule "Valve 1 Opening to Open" =
+    valve1_state = OPENING &
+    startup_timer >= 10
+    ->
+    valve1_state := OPEN;
+    startup_timer := 0;
+
+rule "Close Valve 1" =
+    valve1_state = OPEN &
+    (tank1_level <= 5 | emergency_active)
+    ->
+    valve1_state := CLOSING;
+    pending_tasks := pending_tasks - 1;
+
+rule "Valve 1 Closing to Closed" =
+    valve1_state = CLOSING &
+    shutdown_timer >= 8
+    ->
+    valve1_state := CLOSED;
+    shutdown_timer := 0;
+
+# Правила переходов для клапана 2
+rule "Open Valve 2" =
+    valve2_state = CLOSED &
+    tank2_level > 0 &
+    system_mode = OPERATIONAL &
+    !emergency_active
+    ->
+    valve2_state := OPENING;
+    pending_tasks := pending_tasks + 1;
+
+rule "Valve 2 Opening to Open" =
+    valve2_state = OPENING &
+    startup_timer >= 10
+    ->
+    valve2_state := OPEN;
+    startup_timer := 0;
+
+rule "Close Valve 2" =
+    valve2_state = OPEN &
+    (tank2_level <= 3 | emergency_active)
+    ->
+    valve2_state := CLOSING;
+    pending_tasks := pending_tasks - 1;
+
+rule "Valve 2 Closing to Closed" =
+    valve2_state = CLOSING &
+    shutdown_timer >= 8
+    ->
+    valve2_state := CLOSED;
+    shutdown_timer := 0;
+
+# Правила переходов для датчиков
+rule "Calibrate Temperature Sensor" =
+    temp_sensor_state = OK &
+    system_mode = OPERATIONAL &
+    !emergency_active
+    ->
+    temp_sensor_state := CALIBRATING;
+    pending_tasks := pending_tasks + 1;
+
+rule "Complete Temperature Calibration" =
+    temp_sensor_state = CALIBRATING &
+    startup_timer >= 30
+    ->
+    temp_sensor_state := OK;
+    startup_timer := 0;
+    pending_tasks := pending_tasks - 1;
+
+rule "Temperature Sensor Error" =
+    temp_sensor_state = OK &
+    (system_health < 50 | emergency_active)
+    ->
+    temp_sensor_state := ERROR_SENSOR;
+    error_count := error_count + 1;
+    system_health := system_health - 15;
+
+rule "Recover Temperature Sensor" =
+    temp_sensor_state = ERROR_SENSOR &
+    !emergency_active &
+    system_health > 60
+    ->
+    temp_sensor_state := OK;
+    system_health := system_health + 10;
+
+# Правила переходов для системы
+rule "System Initialization Complete" =
+    system_mode = INITIALIZATION &
+    temp_sensor_state = OK &
+    pressure_sensor_state = OK &
+    humidity_sensor_state = OK &
+    !emergency_active
+    ->
+    system_mode := OPERATIONAL;
+
+rule "Emergency Stop" =
+    system_mode = OPERATIONAL &
+    (emergency_active | system_health < 30 | tank1_level < 20 | tank2_level < 15)
+    ->
+    system_mode := EMERGENCY;
+    emergency_active := true;
+    active_alarms := active_alarms + 1;
+
+rule "Reset Emergency" =
+    system_mode = EMERGENCY &
+    pump1_state = STOPPED &
+    pump2_state = STOPPED &
+    valve1_state = CLOSED &
+    valve2_state = CLOSED &
+    system_health > 50
+    ->
+    system_mode := OPERATIONAL;
+    emergency_active := false;
+    active_alarms := max(0, active_alarms - 1);
+
+rule "Enter Maintenance Mode" =
+    system_mode = OPERATIONAL &
+    !emergency_active &
+    maintenance_mode
+    ->
+    system_mode := MAINTENANCE_MODE;
+
+rule "Exit Maintenance Mode" =
+    system_mode = MAINTENANCE_MODE &
+    pump1_state = STOPPED &
+    pump2_state = STOPPED &
+    valve1_state = CLOSED &
+    valve2_state = CLOSED
+    ->
+    system_mode := OPERATIONAL;
+    maintenance_mode := false;
+
+rule "System Shutdown" =
+    system_mode = EMERGENCY &
+    emergency_active &
+    active_alarms > 3
+    ->
+    system_mode := SHUTDOWN;
+
+# Правила обновления состояния
+rule "Update Pump 1 Pressure" =
+    pump1_state = RUNNING &
+    pump1_pressure < 100
+    ->
+    pump1_pressure := pump1_pressure + 5;
+
+rule "Update Pump 2 Pressure" =
+    pump2_state = RUNNING &
+    pump2_pressure < 100
+    ->
+    pump2_pressure := pump2_pressure + 5;
+
+rule "Update Tank 1 Level" =
+    valve1_state = OPEN &
+    tank1_level > 0
+    ->
+    tank1_level := max(0, tank1_level - 2);
+
+rule "Update Tank 2 Level" =
+    valve2_state = OPEN &
+    tank2_level > 0
+    ->
+    tank2_level := max(0, tank2_level - 1);
+
+rule "Refill Tank 1" =
+    tank1_level < 1000 &
+    pump1_state = STOPPED &
+    pump2_state = STOPPED
+    ->
+    tank1_level := min(1000, tank1_level + 1);
+
+rule "Refill Tank 2" =
+    tank2_level < 1000 &
+    pump1_state = STOPPED &
+    pump2_state = STOPPED
+    ->
+    tank2_level := min(1000, tank2_level + 1);
+
+# Правила таймеров
+rule "Increment Startup Timer" =
+    (pump1_state = STARTING | pump2_state = STARTING | valve1_state = OPENING | valve2_state = OPENING) &
+    startup_timer < 30
+    ->
+    startup_timer := startup_timer + 1;
+
+rule "Increment Shutdown Timer" =
+    (pump1_state = STOPPING | pump2_state = STOPPING | valve1_state = CLOSING | valve2_state = CLOSING) &
+    shutdown_timer < 20
+    ->
+    shutdown_timer := shutdown_timer + 1;
+
+rule "Increment Sync Timer" =
+    system_mode = OPERATIONAL &
+    sync_timer < 100
+    ->
+    sync_timer := sync_timer + 1;
+
+# Правила синхронизации
+rule "Synchronize System" =
+    sync_timer >= 100 &
+    system_mode = OPERATIONAL
+    ->
+    sync_timer := 0;
+    system_health := min(100, system_health + 2);
+
+# Правила восстановления
+rule "System Recovery" =
+    system_mode = OPERATIONAL &
+    error_count > 0 &
+    system_health < 80
+    ->
+    error_count := max(0, error_count - 1);
+    system_health := min(100, system_health + 5);
+
+# Правила очистки
+rule "Clear Errors" =
+    system_mode = OPERATIONAL &
+    error_count > 0 &
+    system_health > 70
+    ->
+    error_count := 0;
+    system_health := min(100, system_health + 10);
+
+# Инварианты безопасности
+invariant "Pump 1 Pressure Limit" =
+    pump1_pressure <= 100;
+
+invariant "Pump 2 Pressure Limit" =
+    pump2_pressure <= 100;
+
+invariant "Tank 1 Level Limit" =
+    tank1_level <= 1000;
+
+invariant "Tank 2 Level Limit" =
+    tank2_level <= 1000;
+
+invariant "System Health Limit" =
+    system_health <= 100;
+
+invariant "Error Count Limit" =
+    error_count <= 10;
+
+invariant "Active Alarms Limit" =
+    active_alarms <= 5;
+
+invariant "Pending Tasks Limit" =
+    pending_tasks <= 20;
+
+invariant "Emergency State Consistency" =
+    emergency_active -> system_mode = EMERGENCY;
+
+invariant "Maintenance State Consistency" =
+    maintenance_mode -> system_mode = MAINTENANCE_MODE;
+
+invariant "Pump State Consistency" =
+    (pump1_state = RUNNING -> pump1_pressure > 0) &
+    (pump2_state = RUNNING -> pump2_pressure > 0);
+
+invariant "Valve State Consistency" =
+    (valve1_state = OPEN -> tank1_level > 0) &
+    (valve2_state = OPEN -> tank2_level > 0);
+
+invariant "Sensor State Consistency" =
+    (temp_sensor_state = ERROR_SENSOR -> system_health < 80) &
+    (pressure_sensor_state = ERROR_SENSOR -> system_health < 80) &
+    (humidity_sensor_state = ERROR_SENSOR -> system_health < 80);
+
+# Спецификации LTL
+ltl "Safety: No Error States" =
+    G(!(pump1_state = ERROR | pump2_state = ERROR | valve1_state = ERROR_VALVE | valve2_state = ERROR_VALVE));
+
+ltl "Liveness: System Can Reach Operational" =
+    F(system_mode = OPERATIONAL);
+
+ltl "Recovery: System Recovers After Errors" =
+    G((pump1_state = ERROR | pump2_state = ERROR) -> F(pump1_state = STOPPED | pump2_state = STOPPED));
+
+ltl "Priority: Emergency Stops All Operations" =
+    G(emergency_active -> X(pump1_state = STOPPING | pump1_state = STOPPED));
+
+ltl "Synchronization: System Synchronizes Regularly" =
+    G(sync_timer >= 100 -> F(sync_timer = 0));
+
+ltl "Mutual Exclusion: Only One Pump Running" =
+    G(!(pump1_state = RUNNING & pump2_state = RUNNING) | system_mode = MAINTENANCE_MODE);
+
+ltl "Resource Management: Tasks Are Completed" =
+    G(pending_tasks > 0 -> F(pending_tasks < pending_tasks'));
+
+ltl "Fault Tolerance: System Continues With Failures" =
+    G((temp_sensor_state = ERROR_SENSOR | pressure_sensor_state = ERROR_SENSOR) -> 
+       F(system_mode = OPERATIONAL | system_mode = MAINTENANCE_MODE));

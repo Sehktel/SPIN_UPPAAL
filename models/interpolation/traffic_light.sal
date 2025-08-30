@@ -1,0 +1,191 @@
+-- Interpolation модель системы светофора с временными ограничениями
+-- Демонстрирует генерацию инвариантов из контрпримеров для временных свойств
+-- Автор: Senior Developer
+-- Дата: 2024-12-19
+
+-- Проблема: сложные временные свойства в UPPAAL
+-- Решение: Interpolation генерирует инварианты из контрпримеров
+
+MODULE TrafficLight
+  -- Состояния светофора
+  VAR
+    light_state: {RED, YELLOW, GREEN, EMERGENCY};
+    pedestrian_waiting: boolean;
+    car_waiting: boolean;
+    emergency_mode: boolean;
+    
+  -- Временные переменные (абстракция часов UPPAAL)
+  VAR
+    red_timer: 0..30;
+    yellow_timer: 0..5;
+    green_timer: 0..45;
+    pedestrian_timer: 0..15;
+    emergency_timer: 0..3;
+    
+  -- Переменные для Interpolation
+  VAR
+    temporal_violation: boolean;
+    interpolant_candidate: boolean;
+    unsat_core_analysis: boolean;
+    
+  INIT
+    light_state = RED &
+    pedestrian_waiting = FALSE &
+    car_waiting = FALSE &
+    emergency_mode = FALSE &
+    red_timer = 0 &
+    yellow_timer = 0 &
+    green_timer = 0 &
+    pedestrian_timer = 0 &
+    emergency_timer = 0 &
+    temporal_violation = FALSE &
+    interpolant_candidate = TRUE &
+    unsat_core_analysis = FALSE;
+
+  -- Переходы светофора
+  TRANS
+    -- Красный свет (30 секунд)
+    (light_state = RED & red_timer < 30) ->
+      (red_timer' = red_timer + 1);
+      
+    -- Переход к желтому
+    (light_state = RED & red_timer >= 30) ->
+      (light_state' = YELLOW &
+       red_timer' = 0 &
+       yellow_timer' = 0);
+       
+    -- Желтый свет (5 секунд)
+    (light_state = YELLOW & yellow_timer < 5) ->
+      (yellow_timer' = yellow_timer + 1);
+      
+    -- Переход к зеленому
+    (light_state = YELLOW & yellow_timer >= 5) ->
+      (light_state' = GREEN &
+       yellow_timer' = 0 &
+       green_timer' = 0);
+       
+    -- Зеленый свет (45 секунд)
+    (light_state = GREEN & green_timer < 45) ->
+      (green_timer' = green_timer + 1);
+      
+    -- Переход к красному
+    (light_state = GREEN & green_timer >= 45) ->
+      (light_state' = RED &
+       green_timer' = 0 &
+       red_timer' = 0);
+       
+    -- Активация экстренного режима
+    (emergency_mode = TRUE & light_state != EMERGENCY) ->
+      (light_state' = EMERGENCY &
+       emergency_timer' = 0);
+       
+    -- Экстренный режим (3 секунды)
+    (light_state = EMERGENCY & emergency_timer < 3) ->
+      (emergency_timer' = emergency_timer + 1);
+      
+    -- Выход из экстренного режима
+    (light_state = EMERGENCY & emergency_timer >= 3) ->
+      (light_state' = RED &
+       emergency_mode' = FALSE &
+       emergency_timer' = 0 &
+       red_timer' = 0);
+
+  -- Переходы пешехода
+  TRANS
+    -- Пешеход прибывает
+    (pedestrian_waiting = FALSE & light_state = RED) ->
+      (pedestrian_waiting' = TRUE &
+       pedestrian_timer' = 0);
+       
+    -- Пешеход переходит
+    (pedestrian_waiting = TRUE & light_state = GREEN & pedestrian_timer < 15) ->
+      (pedestrian_timer' = pedestrian_timer + 1);
+      
+    -- Пешеход завершил переход
+    (pedestrian_waiting = TRUE & pedestrian_timer >= 15) ->
+      (pedestrian_waiting' = FALSE &
+       pedestrian_timer' = 0);
+
+  -- Переходы автомобиля
+  TRANS
+    -- Автомобиль прибывает
+    (car_waiting = FALSE & light_state = RED) ->
+      (car_waiting' = TRUE);
+      
+    -- Автомобиль проезжает
+    (car_waiting = TRUE & light_state = GREEN) ->
+      (car_waiting' = FALSE);
+
+  -- Инварианты для проверки Interpolation
+  INVAR
+    -- Безопасность: светофор не может быть в нескольких состояниях одновременно
+    !(light_state = RED & light_state = GREEN);
+    
+    -- Безопасность: таймеры не могут быть отрицательными
+    red_timer >= 0 & yellow_timer >= 0 & green_timer >= 0;
+    
+    -- Безопасность: пешеход не может переходить при красном свете
+    !(pedestrian_waiting & light_state = RED & pedestrian_timer > 0);
+    
+    -- Безопасность: автомобиль не может проезжать при красном свете
+    !(car_waiting & light_state = RED);
+
+  -- LTL свойства для верификации
+  LTLSPEC
+    -- Живость: светофор всегда может изменить состояние
+    G(light_state = RED -> F light_state = YELLOW);
+    
+    -- Безопасность: никогда не должно быть зеленого и красного одновременно
+    G(!(light_state = GREEN & light_state = RED));
+    
+    -- Справедливость: пешеходы и автомобили получают зеленый свет
+    G(pedestrian_waiting -> F light_state = GREEN);
+    G(car_waiting -> F light_state = GREEN);
+
+  -- Специфичные для Interpolation свойства
+  LTLSPEC
+    -- Временные инварианты: если красный свет, то таймер не превышает 30
+    G(light_state = RED -> red_timer <= 30);
+    
+    -- Временные инварианты: если желтый свет, то таймер не превышает 5
+    G(light_state = YELLOW -> yellow_timer <= 5);
+    
+    -- Временные инварианты: если зеленый свет, то таймер не превышает 45
+    G(light_state = GREEN -> green_timer <= 45);
+    
+    -- Временные инварианты: пешеход не может переходить дольше 15 секунд
+    G(pedestrian_waiting -> pedestrian_timer <= 15);
+
+-- Основная система
+MODULE main
+  VAR
+    traffic_light: TrafficLight;
+    
+  -- Спецификации для Interpolation
+  SPEC
+    -- Автоматически генерируемые временные инварианты будут проверены здесь
+    -- Interpolation найдет сложные временные свойства, которые k-индукция пропустит
+    
+-- Комментарии по сравнению с k-индукцией:
+--
+-- 1. K-индукция (max_k = 20):
+--    - Проверит свойства до глубины 20
+--    - Может не найти сложные временные инварианты
+--    - Быстро завершится, но может пропустить временные нарушения
+--
+-- 2. Interpolation:
+--    - Генерирует инварианты из контрпримеров
+--    - Лучше работает с временными свойствами
+--    - Обнаруживает сложные временные нарушения
+--
+-- 3. Ожидаемые улучшения Interpolation для временных систем:
+--    - Дополнительные временные инварианты
+--    - Автоматическое обнаружение временных нарушений
+--    - Анализ сложных временных сценариев
+--    - Проверка корректности таймеров и задержек
+--
+-- 4. Специфика для UPPAAL:
+--    - Анализ непрерывного времени
+--    - Проверка временных ограничений
+--    - Верификация дедлайнов
+--    - Анализ отклика системы

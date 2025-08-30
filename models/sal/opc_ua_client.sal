@@ -1,0 +1,351 @@
+-- Специализированная модель OPC UA клиента для SAL
+-- Моделирует подключение, подписки, чтение/запись данных и обработку ошибок
+
+CONTEXT opc_ua_client
+BEGIN
+    -- Типы данных OPC UA
+    TYPE NodeId = {NODE_1, NODE_2, NODE_3, NODE_4, NODE_5};
+    TYPE DataType = {INT32, FLOAT, BOOLEAN, STRING, ARRAY};
+    TYPE AccessLevel = {CURRENT_READ, CURRENT_WRITE, HISTORY_READ, HISTORY_WRITE};
+    TYPE SubscriptionMode = {MONITORING, SAMPLING, REPORTING};
+    TYPE SecurityMode = {NONE, SIGN, SIGN_AND_ENCRYPT};
+    TYPE MessageSecurityMode = {NONE, SIGN, SIGN_AND_ENCRYPT};
+    
+    -- Состояния подключения
+    TYPE ConnectionState = {DISCONNECTED, CONNECTING, CONNECTED, AUTHENTICATING, AUTHENTICATED, ERROR};
+    
+    -- Типы сообщений
+    TYPE MessageType = {CONNECT, DISCONNECT, READ, WRITE, SUBSCRIBE, UNSUBSCRIBE, PUBLISH, ERROR};
+    
+    -- Состояния операций
+    TYPE OperationState = {IDLE, IN_PROGRESS, COMPLETED, FAILED, TIMEOUT};
+    
+    -- Типы ошибок
+    TYPE ErrorType = {NONE, TIMEOUT, AUTHENTICATION_FAILED, PERMISSION_DENIED, NODE_NOT_FOUND, INVALID_VALUE};
+
+CONTEXT opc_ua_client_implementation
+BEGIN
+    -- Основной модуль клиента
+    MODULE client
+    EXPORTS
+        -- Интерфейс клиента
+        Connect, Disconnect, ReadNode, WriteNode, Subscribe, Unsubscribe, GetStatus;
+    VARIABLES
+        -- Состояние подключения
+        connection_state : ConnectionState;
+        
+        -- Параметры подключения
+        server_url : STRING;
+        security_mode : SecurityMode;
+        message_security_mode : MessageSecurityMode;
+        
+        -- Аутентификация
+        username : STRING;
+        password : STRING;
+        session_id : NATURAL;
+        
+        -- Подписки
+        subscriptions : ARRAY [1..10] OF SubscriptionMode;
+        subscription_count : NATURAL;
+        
+        -- Операции
+        current_operation : MessageType;
+        operation_state : OperationState;
+        operation_timeout : NATURAL;
+        
+        -- Счетчики
+        read_count : NATURAL;
+        write_count : NATURAL;
+        error_count : NATURAL;
+        timeout_count : NATURAL;
+        
+        -- Таймеры
+        connection_timer : NATURAL;
+        operation_timer : NATURAL;
+        heartbeat_timer : NATURAL;
+        
+        -- Буферы данных
+        read_buffer : ARRAY [1..100] OF STRING;
+        write_buffer : ARRAY [1..100] OF STRING;
+        error_buffer : ARRAY [1..50] OF ErrorType;
+        
+        -- Статистика
+        total_operations : NATURAL;
+        successful_operations : NATURAL;
+        failed_operations : NATURAL;
+        
+        -- Флаги состояния
+        auto_reconnect : BOOLEAN;
+        keep_alive : BOOLEAN;
+        data_logging : BOOLEAN;
+        
+        -- Максимальные значения
+        max_subscriptions : NATURAL;
+        max_retries : NATURAL;
+        max_timeout : NATURAL;
+        
+    INITIALIZATION
+        connection_state = DISCONNECTED;
+        server_url = "";
+        security_mode = NONE;
+        message_security_mode = NONE;
+        username = "";
+        password = "";
+        session_id = 0;
+        subscription_count = 0;
+        current_operation = DISCONNECT;
+        operation_state = IDLE;
+        operation_timeout = 0;
+        read_count = 0;
+        write_count = 0;
+        error_count = 0;
+        timeout_count = 0;
+        connection_timer = 0;
+        operation_timer = 0;
+        heartbeat_timer = 0;
+        total_operations = 0;
+        successful_operations = 0;
+        failed_operations = 0;
+        auto_reconnect = FALSE;
+        keep_alive = FALSE;
+        data_logging = FALSE;
+        max_subscriptions = 10;
+        max_retries = 3;
+        max_timeout = 30;
+        
+    TRANSITION
+        -- Подключение к серверу
+        Connect(url: STRING, sec_mode: SecurityMode, msg_sec_mode: MessageSecurityMode) : void
+        PRE url /= "" AND connection_state = DISCONNECTED
+        POST
+            server_url = url AND
+            security_mode = sec_mode AND
+            message_security_mode = msg_sec_mode AND
+            connection_state = CONNECTING AND
+            connection_timer = 5;
+            
+        -- Отключение от сервера
+        Disconnect() : void
+        PRE connection_state = CONNECTED OR connection_state = AUTHENTICATED
+        POST
+            connection_state = DISCONNECTED AND
+            session_id = 0 AND
+            subscription_count = 0 AND
+            current_operation = DISCONNECT AND
+            operation_state = COMPLETED;
+            
+        -- Чтение узла
+        ReadNode(node_id: NodeId) : void
+        PRE connection_state = AUTHENTICATED AND operation_state = IDLE
+        POST
+            current_operation = READ AND
+            operation_state = IN_PROGRESS AND
+            operation_timer = 10 AND
+            read_count = read_count + 1 AND
+            total_operations = total_operations + 1;
+            
+        -- Запись в узел
+        WriteNode(node_id: NodeId, value: STRING) : void
+        PRE connection_state = AUTHENTICATED AND operation_state = IDLE
+        POST
+            current_operation = WRITE AND
+            operation_state = IN_PROGRESS AND
+            operation_timer = 10 AND
+            write_count = write_count + 1 AND
+            total_operations = total_operations + 1;
+            
+        -- Подписка на узел
+        Subscribe(node_id: NodeId, mode: SubscriptionMode) : void
+        PRE connection_state = AUTHENTICATED AND subscription_count < max_subscriptions
+        POST
+            subscription_count = subscription_count + 1 AND
+            subscriptions[subscription_count] = mode AND
+            current_operation = SUBSCRIBE AND
+            operation_state = IN_PROGRESS AND
+            operation_timer = 15;
+            
+        -- Отписка от узла
+        Unsubscribe(node_id: NodeId) : void
+        PRE connection_state = AUTHENTICATED AND subscription_count > 0
+        POST
+            subscription_count = subscription_count - 1 AND
+            current_operation = UNSUBSCRIBE AND
+            operation_state = IN_PROGRESS AND
+            operation_timer = 10;
+            
+        -- Получение статуса
+        GetStatus() : ConnectionState
+        PRE TRUE
+        POST
+            current_operation = DISCONNECT AND
+            operation_state = IDLE AND
+            RESULT = connection_state;
+            
+        -- Обработка таймеров
+        ProcessTimers() : void
+        PRE TRUE
+        POST
+            -- Обработка таймера подключения
+            (connection_timer > 0 IMPLIES connection_timer = connection_timer - 1) AND
+            (connection_timer = 0 AND connection_state = CONNECTING IMPLIES 
+                connection_state = AUTHENTICATING) AND
+            -- Обработка таймера операций
+            (operation_timer > 0 IMPLIES operation_timer = operation_timer - 1) AND
+            (operation_timer = 0 AND operation_state = IN_PROGRESS IMPLIES 
+                operation_state = TIMEOUT) AND
+            -- Обработка таймера heartbeat
+            (heartbeat_timer > 0 IMPLIES heartbeat_timer = heartbeat_timer - 1) AND
+            (heartbeat_timer = 0 AND keep_alive IMPLIES heartbeat_timer = 30);
+            
+        -- Обработка ошибок
+        HandleError(error: ErrorType) : void
+        PRE operation_state = IN_PROGRESS OR operation_state = TIMEOUT
+        POST
+            operation_state = FAILED AND
+            error_count = error_count + 1 AND
+            failed_operations = failed_operations + 1 AND
+            error_buffer[error_count] = error;
+            
+        -- Успешное завершение операции
+        CompleteOperation() : void
+        PRE operation_state = IN_PROGRESS
+        POST
+            operation_state = COMPLETED AND
+            successful_operations = successful_operations + 1 AND
+            current_operation = DISCONNECT;
+            
+        -- Аутентификация
+        Authenticate(user: STRING, pass: STRING) : void
+        PRE connection_state = AUTHENTICATING AND user /= "" AND pass /= ""
+        POST
+            username = user AND
+            password = pass AND
+            connection_state = AUTHENTICATED AND
+            session_id = session_id + 1 AND
+            current_operation = DISCONNECT AND
+            operation_state = COMPLETED;
+            
+        -- Автоматическое переподключение
+        AutoReconnect() : void
+        PRE connection_state = ERROR AND auto_reconnect
+        POST
+            connection_state = CONNECTING AND
+            connection_timer = 10 AND
+            current_operation = CONNECT AND
+            operation_state = IN_PROGRESS;
+            
+    INVARIANT
+        -- Инварианты безопасности
+        connection_state = DISCONNECTED IMPLIES session_id = 0;
+        connection_state = CONNECTED IMPLIES session_id > 0;
+        subscription_count <= max_subscriptions;
+        operation_timer <= max_timeout;
+        connection_timer <= max_timeout;
+        heartbeat_timer <= 60;
+        
+        -- Инварианты корректности
+        read_count + write_count + error_count = total_operations;
+        successful_operations + failed_operations = total_operations;
+        error_count <= 50;
+        timeout_count <= total_operations;
+        
+        -- Инварианты состояния
+        (operation_state = IN_PROGRESS IMPLIES current_operation /= DISCONNECT);
+        (connection_state = AUTHENTICATED IMPLIES session_id > 0);
+        (subscription_count > 0 IMPLIES connection_state = AUTHENTICATED);
+        
+        -- Инварианты таймеров
+        (connection_timer > 0 IMPLIES connection_state = CONNECTING OR connection_state = AUTHENTICATING);
+        (operation_timer > 0 IMPLIES operation_state = IN_PROGRESS);
+        (heartbeat_timer > 0 IMPLIES keep_alive = TRUE);
+        
+    END client;
+    
+    -- Модуль управления подписками
+    MODULE subscription_manager
+    EXPORTS
+        CreateSubscription, DeleteSubscription, UpdateSubscription, GetSubscriptionStatus;
+    VARIABLES
+        subscriptions : ARRAY [1..20] OF NodeId;
+        modes : ARRAY [1..20] OF SubscriptionMode;
+        statuses : ARRAY [1..20] OF BOOLEAN;
+        count : NATURAL;
+        max_count : NATURAL;
+        
+    INITIALIZATION
+        count = 0;
+        max_count = 20;
+        
+    TRANSITION
+        CreateSubscription(node: NodeId, mode: SubscriptionMode) : void
+        PRE count < max_count
+        POST
+            count = count + 1 AND
+            subscriptions[count] = node AND
+            modes[count] = mode AND
+            statuses[count] = TRUE;
+            
+        DeleteSubscription(index: NATURAL) : void
+        PRE index > 0 AND index <= count
+        POST
+            statuses[index] = FALSE AND
+            count = count - 1;
+            
+        UpdateSubscription(index: NATURAL, new_mode: SubscriptionMode) : void
+        PRE index > 0 AND index <= count AND statuses[index] = TRUE
+        POST
+            modes[index] = new_mode;
+            
+        GetSubscriptionStatus(index: NATURAL) : BOOLEAN
+        PRE index > 0 AND index <= count
+        POST
+            RESULT = statuses[index];
+            
+    INVARIANT
+        count <= max_count;
+        (FORALL (i: NATURAL): i > 0 AND i <= count IMPLIES statuses[i] = TRUE);
+        
+    END subscription_manager;
+    
+    -- Модуль обработки данных
+    MODULE data_processor
+    EXPORTS
+        ProcessReadData, ProcessWriteData, ValidateData, FormatData;
+    VARIABLES
+        data_buffer : ARRAY [1..1000] OF STRING;
+        buffer_index : NATURAL;
+        max_buffer_size : NATURAL;
+        
+    INITIALIZATION
+        buffer_index = 0;
+        max_buffer_size = 1000;
+        
+    TRANSITION
+        ProcessReadData(data: STRING) : void
+        PRE buffer_index < max_buffer_size
+        POST
+            buffer_index = buffer_index + 1 AND
+            data_buffer[buffer_index] = data;
+            
+        ProcessWriteData(data: STRING) : void
+        PRE buffer_index < max_buffer_size
+        POST
+            buffer_index = buffer_index + 1 AND
+            data_buffer[buffer_index] = data;
+            
+        ValidateData(data: STRING) : BOOLEAN
+        PRE TRUE
+        POST
+            RESULT = (data /= "");
+            
+        FormatData(data: STRING, format: STRING) : STRING
+        PRE TRUE
+        POST
+            RESULT = data;
+            
+    INVARIANT
+        buffer_index <= max_buffer_size;
+        
+    END data_processor;
+    
+END opc_ua_client_implementation;

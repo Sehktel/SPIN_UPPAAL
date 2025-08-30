@@ -1,0 +1,155 @@
+-- PAT (Process Algebra Tool) модель светофора на языке CSP
+-- Демонстрирует процессную алгебру и композиционное моделирование
+-- CSP (Communicating Sequential Processes) основан на теории процессов Хоара
+
+-- Определение событий (события CSP)
+channel red, yellow, green, car_arrive, car_pass, pedestrian_arrive, pedestrian_pass;
+channel timer_tick, timer_reset;
+
+-- Процесс таймера
+Timer(count, limit) = 
+    timer_tick -> Timer(count + 1, limit) [count < limit]
+    |
+    timer_reset -> Timer(0, limit)
+    |
+    stop [count >= limit];
+
+-- Процесс светофора
+TrafficLight = 
+    red -> Timer(0, 5) -> yellow -> Timer(0, 3) -> green -> Timer(0, 8) -> TrafficLight;
+
+-- Процесс управления светофором с приоритетами
+SmartTrafficLight = 
+    red -> 
+        (car_arrive -> Timer(0, 5) -> yellow -> Timer(0, 3) -> green -> Timer(0, 8) -> SmartTrafficLight
+        |
+        pedestrian_arrive -> Timer(0, 5) -> yellow -> Timer(0, 3) -> green -> Timer(0, 8) -> SmartTrafficLight
+        |
+        Timer(0, 5) -> yellow -> Timer(0, 3) -> green -> Timer(0, 8) -> SmartTrafficLight);
+
+-- Процесс машины
+Car(id) = 
+    car_arrive -> 
+        (car_pass -> Car(id)
+        |
+        stop);
+
+-- Процесс пешехода
+Pedestrian(id) = 
+    pedestrian_arrive -> 
+        (pedestrian_pass -> Pedestrian(id)
+        |
+        stop);
+
+-- Процесс дороги (композиция машин)
+Road(n) = 
+    (||| i:{0..n-1} @ Car(i));
+
+-- Процесс пешеходного перехода (композиция пешеходов)
+Crossing(m) = 
+    (||| i:{0..m-1} @ Pedestrian(i));
+
+-- Основная система (композиция всех процессов)
+System = 
+    SmartTrafficLight [|{|red, yellow, green, timer_tick, timer_reset|}|] 
+    (Road(3) [|{|car_arrive, car_pass|}|] 
+    Crossing(2) [|{|pedestrian_arrive, pedestrian_pass|}|]);
+
+-- Альтернативная модель с явным управлением состоянием
+-- Определение состояний
+datatype LightState = Red | Yellow | Green;
+
+-- Процесс светофора с состоянием
+StatefulTrafficLight(state) = 
+    case state of
+        Red -> 
+            (car_arrive -> StatefulTrafficLight(Red)
+            |
+            pedestrian_arrive -> StatefulTrafficLight(Red)
+            |
+            timer_tick -> StatefulTrafficLight(Red)
+            |
+            timer_reset -> StatefulTrafficLight(Yellow));
+        
+        Yellow -> 
+            timer_tick -> StatefulTrafficLight(Yellow)
+            |
+            timer_reset -> StatefulTrafficLight(Green);
+        
+        Green -> 
+            (car_pass -> StatefulTrafficLight(Green)
+            |
+            pedestrian_pass -> StatefulTrafficLight(Green)
+            |
+            timer_tick -> StatefulTrafficLight(Green)
+            |
+            timer_reset -> StatefulTrafficLight(Red));
+    end;
+
+-- Спецификации для проверки
+-- Безопасность: никогда не должно быть зеленого света при ожидающем пешеходе
+#assert StatefulTrafficLight(Red) |= [](pedestrian_arrive -> !green);
+
+-- Живость: если пешеход ждет, то в конце концов получит зеленый свет
+#assert StatefulTrafficLight(Red) |= [](pedestrian_arrive -> <>green);
+
+-- Справедливость: светофор не может "зависнуть" в одном состоянии
+#assert StatefulTrafficLight(Red) |= [](Red -> <>Yellow);
+#assert StatefulTrafficLight(Yellow) |= [](Yellow -> <>Green);
+#assert StatefulTrafficLight(Green) |= [](Green -> <>Red);
+
+-- Демонстрация композиции процессов
+-- Процесс синхронизации
+SyncProcess = 
+    red -> yellow -> green -> SyncProcess;
+
+-- Процесс наблюдения
+Observer = 
+    red -> Observer
+    |
+    yellow -> Observer
+    |
+    green -> Observer;
+
+-- Композиция с синхронизацией
+SynchronizedSystem = 
+    SyncProcess [|{|red, yellow, green|}|] Observer;
+
+-- Процесс с параметрами (демонстрация параметризованных процессов)
+ParameterizedTimer(delay) = 
+    timer_tick -> 
+        (if delay > 0 then ParameterizedTimer(delay - 1) else stop);
+
+-- Процесс с рекурсией
+RecursiveTrafficLight = 
+    red -> 
+        (car_arrive -> RecursiveTrafficLight
+        |
+        pedestrian_arrive -> RecursiveTrafficLight
+        |
+        yellow -> green -> RecursiveTrafficLight);
+
+-- Демонстрация различных операторов CSP
+-- Последовательная композиция
+SequentialProcess = 
+    red -> yellow -> green -> stop;
+
+-- Выбор (внешний)
+ChoiceProcess = 
+    (red -> stop) [] (yellow -> stop) [] (green -> stop);
+
+-- Параллельная композиция
+ParallelProcess = 
+    (red -> stop) ||| (yellow -> stop) ||| (green -> stop);
+
+-- Синхронизированная композиция
+SynchronizedProcess = 
+    (red -> yellow -> stop) [|{|red, yellow|}|] (red -> yellow -> stop);
+
+-- Интерливинг (чередование)
+InterleavingProcess = 
+    (red -> stop) ||| (yellow -> stop);
+
+-- Скрытие событий
+HiddenProcess = 
+    (red -> yellow -> green -> stop) \ {|yellow|};

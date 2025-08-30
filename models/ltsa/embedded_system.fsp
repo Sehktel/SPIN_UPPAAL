@@ -1,0 +1,202 @@
+-- LTSA модель встроенной системы
+-- Автор: Senior Developer
+-- Описание: Модель системы с микроконтроллером, датчиками, исполнительными механизмами и интерфейсом
+
+-- Определение действий системы
+range ID = 0..3
+range TEMP = 0..100
+range PRESSURE = 0..10
+range HUMIDITY = 0..100
+
+-- Микроконтроллер - основной компонент управления
+CONTROLLER = (start -> INITIALIZING),
+INITIALIZING = (init_sensors -> SENSOR_CHECK),
+SENSOR_CHECK = (check_sensors -> SENSOR_CHECK | 
+                sensor_ok -> OPERATIONAL |
+                sensor_error -> ERROR_HANDLING),
+OPERATIONAL = (read_sensors -> PROCESSING |
+               emergency_stop -> EMERGENCY),
+PROCESSING = (process_data -> DECISION_MAKING),
+DECISION_MAKING = (actuate -> ACTUATION |
+                   no_action -> OPERATIONAL),
+ACTUATION = (actuator_response -> OPERATIONAL),
+ERROR_HANDLING = (retry -> SENSOR_CHECK |
+                  fail -> EMERGENCY),
+EMERGENCY = (reset -> INITIALIZING |
+             shutdown -> STOPPED),
+STOPPED = STOP.
+
+-- Датчик температуры
+TEMP_SENSOR = (read_temp -> TEMP_SENSOR |
+               calibrate -> CALIBRATING),
+CALIBRATING = (calibration_done -> TEMP_SENSOR |
+               calibration_fail -> TEMP_SENSOR).
+
+-- Датчик давления
+PRESSURE_SENSOR = (read_pressure -> PRESSURE_SENSOR |
+                   calibrate -> CALIBRATING_PRESSURE),
+CALIBRATING_PRESSURE = (calibration_done -> PRESSURE_SENSOR |
+                        calibration_fail -> PRESSURE_SENSOR).
+
+-- Датчик влажности
+HUMIDITY_SENSOR = (read_humidity -> HUMIDITY_SENSOR |
+                   calibrate -> CALIBRATING_HUMIDITY),
+CALIBRATING_HUMIDITY = (calibration_done -> HUMIDITY_SENSOR |
+                        calibration_fail -> HUMIDITY_SENSOR).
+
+-- Исполнительный механизм (насос)
+PUMP = (start_pump -> RUNNING |
+        stop_pump -> STOPPED_PUMP),
+RUNNING = (pump_running -> RUNNING |
+           stop_pump -> STOPPING |
+           pump_fail -> FAILED),
+STOPPING = (pump_stopped -> STOPPED_PUMP),
+STOPPED_PUMP = (start_pump -> RUNNING |
+                pump_maintenance -> MAINTENANCE),
+MAINTENANCE = (maintenance_done -> STOPPED_PUMP),
+FAILED = (reset_pump -> STOPPED_PUMP).
+
+-- Исполнительный механизм (клапан)
+VALVE = (open_valve -> OPEN |
+         close_valve -> CLOSED),
+OPEN = (valve_open -> OPEN |
+        close_valve -> CLOSING |
+        valve_fail -> FAILED_VALVE),
+CLOSING = (valve_closed -> CLOSED),
+CLOSED = (open_valve -> OPEN |
+          valve_maintenance -> MAINTENANCE_VALVE),
+MAINTENANCE_VALVE = (maintenance_done -> CLOSED),
+FAILED_VALVE = (reset_valve -> CLOSED).
+
+-- Система безопасности
+SAFETY_SYSTEM = (monitor -> SAFETY_SYSTEM |
+                 safety_violation -> ALARM |
+                 emergency -> EMERGENCY_ACTIVATION),
+ALARM = (acknowledge -> SAFETY_SYSTEM |
+         emergency -> EMERGENCY_ACTIVATION),
+EMERGENCY_ACTIVATION = (emergency_active -> EMERGENCY_ACTIVATION |
+                        emergency_clear -> SAFETY_SYSTEM).
+
+-- Система связи (RS-485)
+COMMUNICATION = (send_data -> SENDING |
+                receive_data -> RECEIVING |
+                communication_error -> ERROR_HANDLING_COMM),
+SENDING = (data_sent -> COMMUNICATION |
+           send_timeout -> ERROR_HANDLING_COMM),
+RECEIVING = (data_received -> COMMUNICATION |
+             receive_timeout -> ERROR_HANDLING_COMM),
+ERROR_HANDLING_COMM = (retry_communication -> COMMUNICATION |
+                       communication_fail -> COMMUNICATION).
+
+-- Система питания
+POWER_SYSTEM = (power_on -> POWER_ON |
+                power_off -> POWER_OFF |
+                power_fail -> POWER_FAIL),
+POWER_ON = (power_stable -> POWER_ON |
+            power_fluctuation -> POWER_FLUCTUATION |
+            power_fail -> POWER_FAIL),
+POWER_FLUCTUATION = (power_stable -> POWER_ON |
+                     power_fail -> POWER_FAIL),
+POWER_FAIL = (backup_power -> BACKUP_POWER |
+              power_restore -> POWER_ON),
+BACKUP_POWER = (backup_depleted -> POWER_OFF |
+                power_restore -> POWER_ON),
+POWER_OFF = STOP.
+
+-- Система мониторинга
+MONITORING = (collect_data -> DATA_PROCESSING |
+              generate_report -> REPORTING |
+              system_check -> SYSTEM_CHECK),
+DATA_PROCESSING = (process_complete -> MONITORING |
+                   process_error -> ERROR_RECOVERY),
+REPORTING = (report_sent -> MONITORING |
+             report_fail -> ERROR_RECOVERY),
+SYSTEM_CHECK = (check_complete -> MONITORING |
+                check_error -> ERROR_RECOVERY),
+ERROR_RECOVERY = (recovery_success -> MONITORING |
+                  recovery_fail -> MONITORING).
+
+-- Главная система - композиция всех компонентов
+||EMBEDDED_SYSTEM = (CONTROLLER || TEMP_SENSOR || PRESSURE_SENSOR || 
+                     HUMIDITY_SENSOR || PUMP || VALVE || SAFETY_SYSTEM ||
+                     COMMUNICATION || POWER_SYSTEM || MONITORING)
+                     [|{|start, stop, emergency, reset, shutdown|}|]
+                     ENVIRONMENT.
+
+-- Окружение системы
+ENVIRONMENT = (environment_event -> ENVIRONMENT |
+               system_interaction -> ENVIRONMENT).
+
+-- Расширенная модель с несколькими насосами
+-- Насос 1 (основной)
+PUMP1 = (start_pump1 -> RUNNING1 |
+         stop_pump1 -> STOPPED_PUMP1),
+RUNNING1 = (pump1_running -> RUNNING1 |
+            stop_pump1 -> STOPPING1 |
+            pump1_fail -> FAILED1),
+STOPPING1 = (pump1_stopped -> STOPPED_PUMP1),
+STOPPED_PUMP1 = (start_pump1 -> RUNNING1 |
+                 pump1_maintenance -> MAINTENANCE1),
+MAINTENANCE1 = (maintenance1_done -> STOPPED_PUMP1),
+FAILED1 = (reset_pump1 -> STOPPED_PUMP1).
+
+-- Насос 2 (резервный)
+PUMP2 = (start_pump2 -> RUNNING2 |
+         stop_pump2 -> STOPPED_PUMP2),
+RUNNING2 = (pump2_running -> RUNNING2 |
+            stop_pump2 -> STOPPING2 |
+            pump2_fail -> FAILED2),
+STOPPING2 = (pump2_stopped -> STOPPED_PUMP2),
+STOPPED_PUMP2 = (start_pump2 -> RUNNING2 |
+                 pump2_maintenance -> MAINTENANCE2),
+MAINTENANCE2 = (maintenance2_done -> STOPPED_PUMP2),
+FAILED2 = (reset_pump2 -> STOPPED_PUMP2).
+
+-- Система управления насосами
+PUMP_CONTROL = (pump1_primary -> PRIMARY_PUMP1 |
+                pump2_primary -> PRIMARY_PUMP2 |
+                both_pumps -> BOTH_PUMPS),
+PRIMARY_PUMP1 = (pump1_fail -> SWITCH_TO_PUMP2 |
+                 normal_operation -> PRIMARY_PUMP1),
+PRIMARY_PUMP2 = (pump2_fail -> SWITCH_TO_PUMP1 |
+                 normal_operation -> PRIMARY_PUMP2),
+SWITCH_TO_PUMP2 = (pump2_started -> PRIMARY_PUMP2),
+SWITCH_TO_PUMP1 = (pump1_started -> PRIMARY_PUMP1),
+BOTH_PUMPS = (pump1_fail -> PRIMARY_PUMP2 |
+              pump2_fail -> PRIMARY_PUMP1 |
+              normal_operation -> BOTH_PUMPS).
+
+-- Расширенная система с несколькими насосами
+||EXTENDED_EMBEDDED_SYSTEM = (CONTROLLER || TEMP_SENSOR || PRESSURE_SENSOR || 
+                              HUMIDITY_SENSOR || PUMP1 || PUMP2 || PUMP_CONTROL ||
+                              VALVE || SAFETY_SYSTEM || COMMUNICATION || 
+                              POWER_SYSTEM || MONITORING)
+                              [|{|start, stop, emergency, reset, shutdown|}|]
+                              EXTENDED_ENVIRONMENT.
+
+-- Расширенное окружение
+EXTENDED_ENVIRONMENT = (environment_event -> EXTENDED_ENVIRONMENT |
+                        system_interaction -> EXTENDED_ENVIRONMENT |
+                        pump_control -> EXTENDED_ENVIRONMENT).
+
+-- Спецификации для проверки
+-- Спецификация безопасности: система не должна работать без датчиков
+property SAFETY = [sensor_error] -> [emergency_stop].
+
+-- Спецификация живости: система должна реагировать на команды
+property LIVENESS = [start] -> <init_sensors>.
+
+-- Спецификация взаимного исключения: только один насос может работать одновременно
+property MUTEX = [start_pump1] -> [~start_pump2] U [stop_pump1].
+
+-- Спецификация восстановления: система должна восстанавливаться после ошибок
+property RECOVERY = [sensor_error] -> <sensor_ok>.
+
+-- Спецификация приоритетов: безопасность имеет приоритет над операциями
+property PRIORITY = [emergency_stop] -> [~actuate] U [reset].
+
+-- Спецификация синхронизации: датчики должны быть инициализированы перед работой
+property SYNC = [start] -> <init_sensors> U [sensor_ok].
+
+-- Спецификация отказоустойчивости: система должна работать при отказе одного насоса
+property FAULT_TOLERANCE = [pump1_fail] -> <pump2_started> U [normal_operation].

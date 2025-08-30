@@ -1,0 +1,165 @@
+-- Специализированная модель Ethernet протокола для NuSMV
+-- Моделирует CSMA/CD механизм, коллизии и обработку ошибок
+
+MODULE main
+VAR
+    -- Состояния узлов сети
+    node1_state : {IDLE, TRANSMITTING, BACKOFF, COLLISION, ERROR};
+    node2_state : {IDLE, TRANSMITTING, BACKOFF, COLLISION, ERROR};
+    node3_state : {IDLE, TRANSMITTING, BACKOFF, COLLISION, ERROR};
+    
+    -- Состояние канала
+    channel_state : {FREE, BUSY, COLLISION_DETECTED};
+    
+    -- Таймеры и счетчики
+    node1_backoff_timer : 0..15;
+    node2_backoff_timer : 0..15;
+    node3_backoff_timer : 0..15;
+    
+    -- Счетчики попыток передачи
+    node1_attempts : 0..16;
+    node2_attempts : 0..16;
+    node3_attempts : 0..16;
+    
+    -- Флаги готовности к передаче
+    node1_ready : boolean;
+    node2_ready : boolean;
+    node3_ready : boolean;
+    
+    -- Счетчик коллизий
+    collision_count : 0..10;
+    
+    -- Максимальное количество попыток
+    max_attempts : 16;
+
+ASSIGN
+    -- Инициализация
+    init(node1_state) := IDLE;
+    init(node2_state) := IDLE;
+    init(node3_state) := IDLE;
+    init(channel_state) := FREE;
+    init(node1_backoff_timer) := 0;
+    init(node2_backoff_timer) := 0;
+    init(node3_backoff_timer) := 0;
+    init(node1_attempts) := 0;
+    init(node2_attempts) := 0;
+    init(node3_attempts) := 0;
+    init(node1_ready) := TRUE;
+    init(node2_ready) := TRUE;
+    init(node3_ready) := TRUE;
+    init(collision_count) := 0;
+    init(max_attempts) := 16;
+
+    -- Логика передачи для узла 1
+    next(node1_state) := case
+        node1_state = IDLE & node1_ready & channel_state = FREE : TRANSMITTING;
+        node1_state = TRANSMITTING & channel_state = COLLISION_DETECTED : COLLISION;
+        node1_state = COLLISION & node1_attempts < max_attempts : BACKOFF;
+        node1_state = COLLISION & node1_attempts >= max_attempts : ERROR;
+        node1_state = BACKOFF & node1_backoff_timer = 0 : IDLE;
+        node1_state = BACKOFF & node1_backoff_timer > 0 : BACKOFF;
+        node1_state = ERROR : ERROR;
+        TRUE : node1_state;
+    esac;
+    
+    -- Логика передачи для узла 2
+    next(node2_state) := case
+        node2_state = IDLE & node2_ready & channel_state = FREE : TRANSMITTING;
+        node2_state = TRANSMITTING & channel_state = COLLISION_DETECTED : COLLISION;
+        node2_state = COLLISION & node2_attempts < max_attempts : BACKOFF;
+        node2_state = COLLISION & node2_attempts >= max_attempts : ERROR;
+        node2_state = BACKOFF & node2_backoff_timer = 0 : IDLE;
+        node2_state = BACKOFF & node2_backoff_timer > 0 : BACKOFF;
+        node2_state = ERROR : ERROR;
+        TRUE : node2_state;
+    esac;
+    
+    -- Логика передачи для узла 3
+    next(node3_state) := case
+        node3_state = IDLE & node3_ready & channel_state = FREE : TRANSMITTING;
+        node3_state = TRANSMITTING & channel_state = COLLISION_DETECTED : COLLISION;
+        node3_state = COLLISION & node3_attempts < max_attempts : BACKOFF;
+        node3_state = COLLISION & node3_attempts >= max_attempts : ERROR;
+        node3_state = BACKOFF & node3_backoff_timer = 0 : IDLE;
+        node3_state = BACKOFF & node3_backoff_timer > 0 : BACKOFF;
+        node3_state = ERROR : ERROR;
+        TRUE : node3_state;
+    esac;
+    
+    -- Логика состояния канала
+    next(channel_state) := case
+        (node1_state = TRANSMITTING & node2_state = TRANSMITTING) |
+        (node1_state = TRANSMITTING & node3_state = TRANSMITTING) |
+        (node2_state = TRANSMITTING & node3_state = TRANSMITTING) : COLLISION_DETECTED;
+        node1_state = TRANSMITTING | node2_state = TRANSMITTING | node3_state = TRANSMITTING : BUSY;
+        channel_state = COLLISION_DETECTED : FREE;
+        TRUE : FREE;
+    esac;
+    
+    -- Обновление счетчиков попыток
+    next(node1_attempts) := case
+        node1_state = COLLISION : node1_attempts + 1;
+        TRUE : node1_attempts;
+    esac;
+    
+    next(node2_attempts) := case
+        node2_state = COLLISION : node2_attempts + 1;
+        TRUE : node2_attempts;
+    esac;
+    
+    next(node3_attempts) := case
+        node3_state = COLLISION : node3_attempts + 1;
+        TRUE : node3_attempts;
+    esac;
+    
+    -- Обновление таймеров backoff
+    next(node1_backoff_timer) := case
+        node1_state = COLLISION : 1..15;
+        node1_state = BACKOFF & node1_backoff_timer > 0 : node1_backoff_timer - 1;
+        TRUE : 0;
+    esac;
+    
+    next(node2_backoff_timer) := case
+        node2_state = COLLISION : 1..15;
+        node2_state = BACKOFF & node2_backoff_timer > 0 : node2_backoff_timer - 1;
+        TRUE : 0;
+    esac;
+    
+    next(node3_backoff_timer) := case
+        node3_state = COLLISION : 1..15;
+        node3_state = BACKOFF & node3_backoff_timer > 0 : node3_backoff_timer - 1;
+        TRUE : 0;
+    esac;
+    
+    -- Обновление счетчика коллизий
+    next(collision_count) := case
+        channel_state = COLLISION_DETECTED : collision_count + 1;
+        TRUE : collision_count;
+    esac;
+
+-- Спецификации безопасности и корректности
+SPEC AG(node1_state = TRANSMITTING -> channel_state = BUSY | channel_state = COLLISION_DETECTED);
+SPEC AG(node2_state = TRANSMITTING -> channel_state = BUSY | channel_state = COLLISION_DETECTED);
+SPEC AG(node3_state = TRANSMITTING -> channel_state = BUSY | channel_state = COLLISION_DETECTED);
+
+-- Спецификация отсутствия deadlock
+SPEC AG(EX(TRUE));
+
+-- Спецификация корректности backoff механизма
+SPEC AG(node1_state = BACKOFF -> node1_backoff_timer > 0);
+SPEC AG(node2_state = BACKOFF -> node2_backoff_timer > 0);
+SPEC AG(node3_state = BACKOFF -> node3_backoff_timer > 0);
+
+-- Спецификация ограничения попыток передачи
+SPEC AG(node1_attempts <= max_attempts);
+SPEC AG(node2_attempts <= max_attempts);
+SPEC AG(node3_attempts <= max_attempts);
+
+-- Спецификация корректности обработки коллизий
+SPEC AG(channel_state = COLLISION_DETECTED -> 
+    (node1_state = TRANSMITTING | node2_state = TRANSMITTING | node3_state = TRANSMITTING));
+
+-- Спецификация восстановления после ошибок
+SPEC AG(node1_state = ERROR -> AX(node1_state = ERROR));
+SPEC AG(node2_state = ERROR -> AX(node2_state = ERROR));
+SPEC AG(node3_state = ERROR -> AX(node3_state = ERROR));

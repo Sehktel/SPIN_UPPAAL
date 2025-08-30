@@ -1,0 +1,239 @@
+-- SAL модель распределенной системы
+-- Автор: Senior Developer
+-- Описание: Модель системы с несколькими узлами, синхронизацией и отказоустойчивостью
+
+distributed_system: CONTEXT =
+BEGIN
+    -- Типы данных
+    node_id: TYPE = {node1, node2, node3, node4};
+    node_state: TYPE = {INACTIVE, ACTIVE, SYNCHRONIZING, FAILED, RECOVERING};
+    message_type: TYPE = {HEARTBEAT, SYNC_REQUEST, SYNC_RESPONSE, DATA_UPDATE, ERROR};
+    
+    -- Модуль узла системы
+    node[node_id]: MODULE =
+    BEGIN
+        OUTPUT
+            state: node_state,
+            last_heartbeat: NATURAL,
+            data_version: NATURAL,
+            neighbor_status: ARRAY node_id OF BOOLEAN,
+            message_queue: ARRAY message_type OF NATURAL
+            
+        LOCAL
+            internal_clock: NATURAL,
+            sync_timer: NATURAL,
+            failure_probability: REAL
+            
+        INITIALIZATION
+            state = INACTIVE;
+            last_heartbeat = 0;
+            data_version = 0;
+            internal_clock = 0;
+            sync_timer = 0;
+            failure_probability = 0.01;
+            
+        TRANSITION [
+            -- Активация узла
+            state = INACTIVE -->
+                state' = ACTIVE;
+                last_heartbeat' = internal_clock;
+                
+            -- Отправка heartbeat
+            state = ACTIVE -->
+                last_heartbeat' = internal_clock;
+                internal_clock' = internal_clock + 1;
+                
+            -- Запрос синхронизации
+            state = ACTIVE AND sync_timer >= 100 -->
+                state' = SYNCHRONIZING;
+                sync_timer' = 0;
+                
+            -- Синхронизация с соседями
+            state = SYNCHRONIZING -->
+                state' = ACTIVE;
+                data_version' = data_version + 1;
+                
+            -- Обработка ошибок
+            state = ACTIVE AND failure_probability > 0.05 -->
+                state' = FAILED;
+                
+            -- Восстановление после сбоя
+            state = FAILED -->
+                state' = RECOVERING;
+                
+            -- Завершение восстановления
+            state = RECOVERING -->
+                state' = ACTIVE;
+                data_version' = 0;
+                
+            -- Обновление статуса соседей
+            state = ACTIVE -->
+                neighbor_status' = LAMBDA (n: node_id): 
+                    IF n /= node_id THEN
+                        -- Проверка доступности соседа
+                        internal_clock - last_heartbeat < 50
+                    ELSE
+                        TRUE
+                    ENDIF;
+                    
+            -- Обработка сообщений
+            state = ACTIVE -->
+                message_queue' = LAMBDA (mt: message_type):
+                    IF mt = HEARTBEAT THEN
+                        message_queue(mt) + 1
+                    ELSE
+                        message_queue(mt)
+                    ENDIF;
+        ]
+        
+        -- Инварианты безопасности
+        INVARIANT
+            state /= FAILED IMPLIES internal_clock - last_heartbeat < 100;
+            state = SYNCHRONIZING IMPLIES sync_timer = 0;
+            data_version >= 0;
+            
+    END;
+    
+    -- Модуль координатора
+    coordinator: MODULE =
+    BEGIN
+        OUTPUT
+            global_state: ARRAY node_id OF node_state,
+            system_health: NATURAL,
+            sync_required: BOOLEAN
+            
+        LOCAL
+            health_check_timer: NATURAL,
+            last_sync_time: NATURAL
+            
+        INITIALIZATION
+            health_check_timer = 0;
+            last_sync_time = 0;
+            sync_required = FALSE;
+            
+        TRANSITION [
+            -- Проверка здоровья системы
+            health_check_timer >= 50 -->
+                health_check_timer' = 0;
+                system_health' = COUNT(LAMBDA (n: node_id): global_state(n) = ACTIVE);
+                
+            -- Определение необходимости синхронизации
+            system_health < 3 -->
+                sync_required' = TRUE;
+                
+            -- Синхронизация завершена
+            sync_required AND system_health >= 3 -->
+                sync_required' = FALSE;
+                last_sync_time' = health_check_timer;
+                
+            -- Обновление таймера
+            TRUE -->
+                health_check_timer' = health_check_timer + 1;
+        ]
+        
+        INVARIANT
+            system_health <= 4;
+            sync_required IMPLIES system_health < 3;
+            
+    END;
+    
+    -- Модуль сети связи
+    network: MODULE =
+    BEGIN
+        OUTPUT
+            connectivity_matrix: ARRAY node_id OF ARRAY node_id OF BOOLEAN,
+            message_delivery_rate: REAL,
+            latency: ARRAY node_id OF NATURAL
+            
+        LOCAL
+            network_load: NATURAL,
+            failure_events: NATURAL
+            
+        INITIALIZATION
+            network_load = 0;
+            failure_events = 0;
+            message_delivery_rate = 0.99;
+            
+        TRANSITION [
+            -- Изменение нагрузки сети
+            network_load < 1000 -->
+                network_load' = network_load + 10;
+                message_delivery_rate' = max(0.5, 0.99 - network_load / 10000);
+                
+            -- Сброс нагрузки
+            network_load >= 1000 -->
+                network_load' = 0;
+                message_delivery_rate' = 0.99;
+                
+            -- Симуляция сетевых сбоев
+            failure_events < 5 AND message_delivery_rate < 0.8 -->
+                failure_events' = failure_events + 1;
+                message_delivery_rate' = message_delivery_rate * 0.9;
+                
+            -- Восстановление сети
+            failure_events > 0 AND message_delivery_rate > 0.9 -->
+                failure_events' = failure_events - 1;
+        ]
+        
+        INVARIANT
+            message_delivery_rate >= 0.5;
+            network_load <= 1000;
+            
+    END;
+    
+    -- Главный модуль системы
+    main: MODULE =
+    BEGIN
+        OUTPUT
+            overall_health: NATURAL,
+            system_synchronized: BOOLEAN
+            
+        LOCAL
+            health_monitor: NATURAL
+            
+        INITIALIZATION
+            overall_health = 4;
+            system_synchronized = TRUE;
+            health_monitor = 0;
+            
+        TRANSITION [
+            -- Мониторинг общего состояния
+            health_monitor >= 100 -->
+                health_monitor' = 0;
+                overall_health' = COUNT(LAMBDA (n: node_id): 
+                    node[n].state = ACTIVE OR node[n].state = SYNCHRONIZING);
+                    
+            -- Проверка синхронизации
+            overall_health >= 3 -->
+                system_synchronized' = TRUE;
+                
+            -- Потеря синхронизации
+            overall_health < 3 -->
+                system_synchronized' = FALSE;
+                
+            -- Обновление монитора
+            TRUE -->
+                health_monitor' = health_monitor + 1;
+        ]
+        
+        INVARIANT
+            overall_health <= 4;
+            system_synchronized IMPLIES overall_health >= 3;
+            
+    END;
+    
+    -- Спецификации системы
+    SPECIFICATION
+        -- Безопасность: система не должна полностью выходить из строя
+        AG(overall_health > 0);
+        
+        -- Живость: система должна восстанавливаться после сбоев
+        AG(overall_health < 2 IMPLIES EF(overall_health >= 3));
+        
+        -- Синхронизация: активные узлы должны синхронизироваться
+        AG(overall_health >= 3 IMPLIES EF(system_synchronized));
+        
+        -- Отказоустойчивость: максимум один узел может быть в состоянии FAILED
+        AG(COUNT(LAMBDA (n: node_id): node[n].state = FAILED) <= 1);
+        
+END;

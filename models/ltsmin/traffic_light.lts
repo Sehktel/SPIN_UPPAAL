@@ -1,0 +1,52 @@
+# LTSmin модель светофора
+# LTSmin - универсальный инструмент для анализа систем с помеченными переходами
+# Поддерживает множество языков моделирования через плагины
+
+# Определение состояний системы
+# Формат: состояние -> [переходы]
+# Переходы: событие -> новое_состояние
+
+# Состояния светофора
+traffic_light:
+  red -> [car_arrive -> red_waiting_car]
+  red -> [pedestrian_arrive -> red_waiting_pedestrian]
+  red -> [timer -> yellow]
+  
+  red_waiting_car -> [timer -> yellow]
+  red_waiting_pedestrian -> [timer -> yellow]
+  
+  yellow -> [timer -> green]
+  
+  green -> [car_pass -> green]
+  green -> [pedestrian_pass -> green]
+  green -> [timer -> red]
+
+# Состояния таймера
+timer:
+  idle -> [start -> counting]
+  counting -> [tick -> counting]
+  counting -> [timeout -> idle]
+
+# Состояния машин
+car:
+  waiting -> [pass -> free]
+  free -> [arrive -> waiting]
+
+# Состояния пешеходов
+pedestrian:
+  waiting -> [pass -> free]
+  free -> [arrive -> waiting]
+
+# Основная система (композиция всех компонентов)
+system:
+  traffic_light || timer || car || pedestrian
+
+# Спецификации для проверки
+# Безопасность: никогда не должно быть зеленого света при ожидающем пешеходе
+safety: !(green && pedestrian_waiting)
+
+# Живость: если пешеход ждет, то в конце концов получит зеленый свет
+liveness: pedestrian_waiting -> F green
+
+# Справедливость: светофор не может "зависнуть" в одном состоянии
+fairness: red -> F yellow && yellow -> F green && green -> F red

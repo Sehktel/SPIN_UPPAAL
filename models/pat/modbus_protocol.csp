@@ -1,0 +1,252 @@
+-- Специализированная модель Modbus протокола для PAT
+-- Моделирует Modbus TCP с функциями чтения/записи регистров и обработкой ошибок
+
+-- Каналы для Modbus протокола
+channel start_transaction, end_transaction;
+channel read_holding_register, read_input_register;
+channel write_single_register, write_multiple_registers;
+channel read_coils, read_discrete_inputs;
+channel write_single_coil, write_multiple_coils;
+channel modbus_response, modbus_error;
+channel timeout, retry, success, failure;
+channel validate_request, process_request;
+channel update_register, update_coil;
+channel check_permissions, log_operation;
+
+-- Определение типов данных
+datatype RegisterType = HOLDING | INPUT;
+datatype CoilType = COIL | DISCRETE_INPUT;
+datatype FunctionCode = READ_COILS | READ_DISCRETE_INPUTS | READ_HOLDING_REGISTERS | 
+                       READ_INPUT_REGISTERS | WRITE_SINGLE_COIL | WRITE_SINGLE_REGISTER |
+                       WRITE_MULTIPLE_COILS | WRITE_MULTIPLE_REGISTERS;
+datatype ErrorCode = ILLEGAL_FUNCTION | ILLEGAL_DATA_ADDRESS | ILLEGAL_DATA_VALUE | 
+                    SLAVE_DEVICE_FAILURE | ACKNOWLEDGE | SLAVE_DEVICE_BUSY | 
+                    MEMORY_PARITY_ERROR | GATEWAY_PATH_UNAVAILABLE | GATEWAY_TARGET_DEVICE_FAILED;
+
+-- Основной процесс Modbus Master
+ModbusMaster = start_transaction -> 
+               (ReadRegisters | WriteRegisters | ReadCoils | WriteCoils) -> 
+               end_transaction -> ModbusMaster;
+
+-- Чтение регистров
+ReadRegisters = (read_holding_register -> validate_request -> process_request -> 
+                 modbus_response -> success -> SKIP) |
+                (read_input_register -> validate_request -> process_request -> 
+                 modbus_response -> success -> SKIP);
+
+-- Запись регистров
+WriteRegisters = (write_single_register -> validate_request -> check_permissions -> 
+                  process_request -> update_register -> modbus_response -> success -> SKIP) |
+                 (write_multiple_registers -> validate_request -> check_permissions -> 
+                  process_request -> update_register -> modbus_response -> success -> SKIP);
+
+-- Чтение катушек
+ReadCoils = (read_coils -> validate_request -> process_request -> 
+             modbus_response -> success -> SKIP) |
+            (read_discrete_inputs -> validate_request -> process_request -> 
+             modbus_response -> success -> SKIP);
+
+-- Запись катушек
+WriteCoils = (write_single_coil -> validate_request -> check_permissions -> 
+              process_request -> update_coil -> modbus_response -> success -> SKIP) |
+             (write_multiple_coils -> validate_request -> check_permissions -> 
+              process_request -> update_coil -> modbus_response -> success -> SKIP);
+
+-- Процесс Modbus Slave
+ModbusSlave = modbus_response -> 
+              (ProcessReadRequest | ProcessWriteRequest | ProcessError) -> 
+              ModbusSlave;
+
+-- Обработка запроса на чтение
+ProcessReadRequest = read_holding_register -> 
+                     (ReadHoldingRegisters | HandleReadError) |
+                     read_input_register -> 
+                     (ReadInputRegisters | HandleReadError) |
+                     read_coils -> 
+                     (ReadCoilsData | HandleReadError) |
+                     read_discrete_inputs -> 
+                     (ReadDiscreteInputs | HandleReadError);
+
+-- Обработка запроса на запись
+ProcessWriteRequest = write_single_register -> 
+                      (WriteSingleRegister | HandleWriteError) |
+                      write_multiple_registers -> 
+                      (WriteMultipleRegisters | HandleWriteError) |
+                      write_single_coil -> 
+                      (WriteSingleCoil | HandleWriteError) |
+                      write_multiple_coils -> 
+                      (WriteMultipleCoils | HandleWriteError);
+
+-- Обработка ошибок
+ProcessError = modbus_error -> 
+               (HandleIllegalFunction | HandleIllegalAddress | HandleIllegalValue | 
+                HandleDeviceFailure | HandleDeviceBusy | HandleMemoryError) -> 
+               SKIP;
+
+-- Чтение holding регистров
+ReadHoldingRegisters = process_request -> 
+                        (ReadRegisterData | HandleReadTimeout) -> 
+                        modbus_response -> SKIP;
+
+-- Чтение input регистров
+ReadInputRegisters = process_request -> 
+                      (ReadInputData | HandleReadTimeout) -> 
+                      modbus_response -> SKIP;
+
+-- Чтение данных катушек
+ReadCoilsData = process_request -> 
+                 (ReadCoilData | HandleReadTimeout) -> 
+                 modbus_response -> SKIP;
+
+-- Чтение дискретных входов
+ReadDiscreteInputs = process_request -> 
+                      (ReadDiscreteData | HandleReadTimeout) -> 
+                      modbus_response -> SKIP;
+
+-- Запись одиночного регистра
+WriteSingleRegister = check_permissions -> 
+                      process_request -> 
+                      (UpdateRegisterData | HandleWriteTimeout) -> 
+                      modbus_response -> SKIP;
+
+-- Запись множественных регистров
+WriteMultipleRegisters = check_permissions -> 
+                          process_request -> 
+                          (UpdateMultipleRegisters | HandleWriteTimeout) -> 
+                          modbus_response -> SKIP;
+
+-- Запись одиночной катушки
+WriteSingleCoil = check_permissions -> 
+                   process_request -> 
+                   (UpdateCoilData | HandleWriteTimeout) -> 
+                   modbus_response -> SKIP;
+
+-- Запись множественных катушек
+WriteMultipleCoils = check_permissions -> 
+                      process_request -> 
+                      (UpdateMultipleCoils | HandleWriteTimeout) -> 
+                      modbus_response -> SKIP;
+
+-- Обработка ошибок чтения
+HandleReadError = (HandleIllegalFunction | HandleIllegalAddress | HandleIllegalValue) -> 
+                   modbus_error -> SKIP;
+
+-- Обработка ошибок записи
+HandleWriteError = (HandleIllegalFunction | HandleIllegalAddress | HandleIllegalValue | 
+                    HandleDeviceFailure | HandleDeviceBusy) -> 
+                    modbus_error -> SKIP;
+
+-- Обработка таймаутов
+HandleReadTimeout = timeout -> retry -> SKIP;
+HandleWriteTimeout = timeout -> retry -> SKIP;
+
+-- Обработка конкретных ошибок
+HandleIllegalFunction = modbus_error -> SKIP;
+HandleIllegalAddress = modbus_error -> SKIP;
+HandleIllegalValue = modbus_error -> SKIP;
+HandleDeviceFailure = modbus_error -> SKIP;
+HandleDeviceBusy = modbus_error -> SKIP;
+HandleMemoryError = modbus_error -> SKIP;
+
+-- Чтение данных регистров
+ReadRegisterData = log_operation -> SKIP;
+ReadInputData = log_operation -> SKIP;
+ReadCoilData = log_operation -> SKIP;
+ReadDiscreteData = log_operation -> SKIP;
+
+-- Обновление данных регистров
+UpdateRegisterData = update_register -> log_operation -> SKIP;
+UpdateMultipleRegisters = update_register -> log_operation -> SKIP;
+UpdateCoilData = update_coil -> log_operation -> SKIP;
+UpdateMultipleCoils = update_coil -> log_operation -> SKIP;
+
+-- Процесс валидации запросов
+RequestValidator = validate_request -> 
+                   (ValidateFunctionCode | ValidateAddress | ValidateData) -> 
+                   RequestValidator;
+
+-- Валидация кода функции
+ValidateFunctionCode = SKIP;
+
+-- Валидация адреса
+ValidateAddress = SKIP;
+
+-- Валидация данных
+ValidateData = SKIP;
+
+-- Процесс проверки разрешений
+PermissionChecker = check_permissions -> 
+                    (CheckReadPermission | CheckWritePermission) -> 
+                    PermissionChecker;
+
+-- Проверка разрешения на чтение
+CheckReadPermission = SKIP;
+
+-- Проверка разрешения на запись
+CheckWritePermission = SKIP;
+
+-- Процесс обработки запросов
+RequestProcessor = process_request -> 
+                   (ProcessReadOperation | ProcessWriteOperation) -> 
+                   RequestProcessor;
+
+-- Обработка операции чтения
+ProcessReadOperation = SKIP;
+
+-- Обработка операции записи
+ProcessWriteOperation = SKIP;
+
+-- Процесс обновления регистров
+RegisterUpdater = update_register -> 
+                  (UpdateSingleRegister | UpdateMultipleRegisters) -> 
+                  RegisterUpdater;
+
+-- Обновление одиночного регистра
+UpdateSingleRegister = SKIP;
+
+-- Обновление множественных регистров
+UpdateMultipleRegisters = SKIP;
+
+-- Процесс обновления катушек
+CoilUpdater = update_coil -> 
+               (UpdateSingleCoil | UpdateMultipleCoils) -> 
+               CoilUpdater;
+
+-- Обновление одиночной катушки
+UpdateSingleCoil = SKIP;
+
+-- Обновление множественных катушек
+UpdateMultipleCoils = SKIP;
+
+-- Процесс логирования операций
+OperationLogger = log_operation -> 
+                  (LogReadOperation | LogWriteOperation | LogErrorOperation) -> 
+                  OperationLogger;
+
+-- Логирование операции чтения
+LogReadOperation = SKIP;
+
+-- Логирование операции записи
+LogWriteOperation = SKIP;
+
+-- Логирование ошибки
+LogErrorOperation = SKIP;
+
+-- Основная система Modbus
+MainSystem = ModbusMaster ||| ModbusSlave ||| RequestValidator ||| 
+             PermissionChecker ||| RequestProcessor ||| RegisterUpdater ||| 
+             CoilUpdater ||| OperationLogger;
+
+-- Проверки свойств системы
+#assert MainSystem deadlockfree;
+#assert MainSystem divergencefree;
+
+-- Спецификации LTL
+#assert MainSystem |= []<>(start_transaction);
+#assert MainSystem |= [](start_transaction -> <>(end_transaction));
+#assert MainSystem |= [](modbus_error -> <>(retry | failure));
+#assert MainSystem |= [](success -> <>(end_transaction));
+#assert MainSystem |= [](read_holding_register -> <>(modbus_response | modbus_error));
+#assert MainSystem |= [](write_single_register -> <>(modbus_response | modbus_error));
+#assert MainSystem |= [](read_coils -> <>(modbus_response | modbus_error));
+#assert MainSystem |= [](write_single_coil -> <>(modbus_response | modbus_error));

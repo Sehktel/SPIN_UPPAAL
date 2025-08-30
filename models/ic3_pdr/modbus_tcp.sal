@@ -1,0 +1,225 @@
+-- IC3/PDR модель Modbus TCP протокола
+-- Демонстрирует автоматическую генерацию инвариантов для промышленного протокола
+-- Автор: Senior Developer
+-- Дата: 2024-12-19
+
+-- Проблема: k-индукция не может найти сложные инварианты в Modbus TCP
+-- Решение: IC3/PDR автоматически генерирует инварианты для сложных состояний
+
+MODULE ModbusTCPClient
+  -- Состояния клиента Modbus
+  VAR
+    client_state: {IDLE, CONNECTING, CONNECTED, SENDING, WAITING_RESPONSE, PROCESSING, ERROR, DISCONNECTING};
+    connection_id: 0..65535;
+    transaction_id: 0..65535;
+    function_code: {READ_COILS, READ_DISCRETE, READ_HOLDING, READ_INPUT, WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER, WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS};
+    address: 0..65535;
+    quantity: 0..125;
+    data: array 0..125 of 0..65535;
+    timeout_counter: 0..1000;
+    retry_count: 0..3;
+    
+  -- Переменные для IC3/PDR
+  VAR
+    invariant_candidate: boolean;
+    strengthening_round: 0..100;
+    
+  INIT
+    client_state = IDLE &
+    connection_id = 0 &
+    transaction_id = 0 &
+    function_code = READ_COILS &
+    address = 0 &
+    quantity = 0 &
+    timeout_counter = 0 &
+    retry_count = 0 &
+    invariant_candidate = TRUE &
+    strengthening_round = 0;
+
+  -- Переходы клиента
+  TRANS
+    -- Подключение к серверу
+    (client_state = IDLE) ->
+      (client_state' = CONNECTING &
+       connection_id' = connection_id + 1 &
+       timeout_counter' = 0);
+       
+    -- Успешное подключение
+    (client_state = CONNECTING & timeout_counter < 100) ->
+      (client_state' = CONNECTED &
+       timeout_counter' = 0);
+       
+    -- Отправка запроса
+    (client_state = CONNECTED) ->
+      (client_state' = SENDING &
+       transaction_id' = transaction_id + 1 &
+       timeout_counter' = 0);
+       
+    -- Ожидание ответа
+    (client_state = SENDING) ->
+      (client_state' = WAITING_RESPONSE &
+       timeout_counter' = timeout_counter + 1);
+       
+    -- Получение ответа
+    (client_state = WAITING_RESPONSE & timeout_counter < 500) ->
+      (client_state' = PROCESSING &
+       timeout_counter' = 0);
+       
+    -- Обработка ответа
+    (client_state = PROCESSING) ->
+      (client_state' = CONNECTED);
+      
+    -- Таймаут - повторная отправка
+    (client_state = WAITING_RESPONSE & timeout_counter >= 500 & retry_count < 3) ->
+      (client_state' = SENDING &
+       timeout_counter' = 0 &
+       retry_count' = retry_count + 1);
+       
+    -- Слишком много попыток - ошибка
+    (client_state = WAITING_RESPONSE & timeout_counter >= 500 & retry_count >= 3) ->
+      (client_state' = ERROR &
+       timeout_counter' = 0 &
+       retry_count' = 0);
+       
+    -- Восстановление после ошибки
+    (client_state = ERROR) ->
+      (client_state' = DISCONNECTING);
+      
+    -- Отключение
+    (client_state = DISCONNECTING) ->
+      (client_state' = IDLE);
+
+  -- Инварианты для проверки IC3/PDR
+  INVAR
+    -- Безопасность: ID подключения в допустимом диапазоне
+    connection_id <= 65535;
+    
+    -- Безопасность: ID транзакции в допустимом диапазоне
+    transaction_id <= 65535;
+    
+    -- Безопасность: адрес в допустимом диапазоне
+    address <= 65535;
+    
+    -- Безопасность: количество в допустимом диапазоне
+    quantity <= 125;
+    
+    -- Безопасность: таймаут не может быть отрицательным
+    timeout_counter >= 0;
+    
+    -- Безопасность: количество попыток ограничено
+    retry_count <= 3;
+
+MODULE ModbusTCPServer
+  -- Состояния сервера Modbus
+  VAR
+    server_state: {IDLE, LISTENING, ACCEPTING, PROCESSING, RESPONDING, ERROR};
+    client_connections: array 0..9 of 0..65535;
+    active_connections: 0..10;
+    current_transaction: 0..65535;
+    function_code: {READ_COILS, READ_DISCRETE, READ_HOLDING, READ_INPUT, WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER, WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS};
+    address: 0..65535;
+    quantity: 0..125;
+    data: array 0..125 of 0..65535;
+    
+  -- Переменные для IC3/PDR
+  VAR
+    invariant_candidate: boolean;
+    strengthening_round: 0..100;
+    
+  INIT
+    server_state = IDLE &
+    active_connections = 0 &
+    current_transaction = 0 &
+    function_code = READ_COILS &
+    address = 0 &
+    quantity = 0 &
+    invariant_candidate = TRUE &
+    strengthening_round = 0;
+
+  -- Переходы сервера
+  TRANS
+    -- Запуск сервера
+    (server_state = IDLE) ->
+      (server_state' = LISTENING);
+      
+    -- Принятие подключения
+    (server_state = LISTENING & active_connections < 10) ->
+      (server_state' = ACCEPTING &
+       active_connections' = active_connections + 1);
+       
+    -- Обработка запроса
+    (server_state = ACCEPTING) ->
+      (server_state' = PROCESSING &
+       current_transaction' = current_transaction + 1);
+       
+    -- Отправка ответа
+    (server_state = PROCESSING) ->
+      (server_state' = RESPONDING);
+      
+    -- Возврат к прослушиванию
+    (server_state = RESPONDING) ->
+      (server_state' = LISTENING);
+      
+    -- Обработка ошибки
+    (server_state = ERROR) ->
+      (server_state' = LISTENING);
+
+  -- Инварианты для проверки IC3/PDR
+  INVAR
+    -- Безопасность: количество активных подключений ограничено
+    active_connections <= 10;
+    
+    -- Безопасность: ID транзакции в допустимом диапазоне
+    current_transaction <= 65535;
+    
+    -- Безопасность: адрес в допустимом диапазоне
+    address <= 65535;
+    
+    -- Безопасность: количество в допустимом диапазоне
+    quantity <= 125;
+
+-- Основная система Modbus TCP
+MODULE main
+  VAR
+    client: ModbusTCPClient;
+    server: ModbusTCPServer;
+    
+  -- Спецификации для IC3/PDR
+  SPEC
+    -- Автоматически генерируемые инварианты будут проверены здесь
+    -- IC3/PDR найдет сложные свойства безопасности Modbus TCP
+    
+  -- LTL свойства для верификации
+  LTLSPEC
+    -- Живость: если клиент подключился, он может отправить запрос
+    G(client.client_state = CONNECTED -> F client.client_state = SENDING);
+    
+    -- Безопасность: клиент и сервер не могут быть в конфликтующих состояниях
+    G(!(client.client_state = SENDING & server.server_state = IDLE));
+    
+    -- Справедливость: система не может зависнуть
+    G(client.client_state = WAITING_RESPONSE -> F (client.client_state = PROCESSING | client.client_state = ERROR));
+    
+    -- Инвариант: количество подключений ограничено
+    G(server.active_connections <= 10);
+    
+    -- Инвариант: ID транзакции уникален
+    G(client.transaction_id != client.transaction_id');
+
+-- Комментарии по сравнению с k-индукцией:
+--
+-- 1. K-индукция (max_k = 20):
+--    - Проверит свойства до глубины 20
+--    - Может не найти сложные инварианты Modbus TCP
+--    - Быстро завершится, но может пропустить ошибки
+--
+-- 2. IC3/PDR:
+--    - Автоматически генерирует инварианты для Modbus TCP
+--    - Найдет сложные свойства безопасности протокола
+--    - Обнаружит проблемы с транзакциями и подключениями
+--
+-- 3. Ожидаемые улучшения IC3/PDR для Modbus TCP:
+--    - Дополнительные инварианты безопасности протокола
+--    - Автоматическое обнаружение проблем с состоянием
+--    - Верификация сложных сценариев взаимодействия
+--    - Проверка корректности обработки ошибок

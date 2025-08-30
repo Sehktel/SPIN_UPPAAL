@@ -1,0 +1,39 @@
+-- LTSA (Labelled Transition System Analyser) модель светофора на языке FSP
+-- FSP (Finite State Processes) - язык для описания конечных процессов
+-- Демонстрирует простоту использования и понятность
+
+-- Определение событий
+set Events = {red, yellow, green, car_arrive, car_pass, pedestrian_arrive, pedestrian_pass, tick}
+
+-- Процесс таймера
+TIMER = (tick -> TIMER).
+
+-- Процесс светофора
+TRAFFIC_LIGHT = (red -> YELLOW),
+YELLOW = (tick -> YELLOW | tick -> green -> GREEN),
+GREEN = (tick -> GREEN | tick -> red -> TRAFFIC_LIGHT).
+
+-- Процесс светофора с приоритетами
+SMART_TRAFFIC_LIGHT = (red -> PRIORITY_RED),
+PRIORITY_RED = (car_arrive -> WAIT_RED | pedestrian_arrive -> WAIT_RED | tick -> yellow -> YELLOW),
+WAIT_RED = (tick -> yellow -> YELLOW),
+YELLOW = (tick -> green -> GREEN),
+GREEN = (tick -> red -> SMART_TRAFFIC_LIGHT).
+
+-- Процесс машины
+CAR = (car_arrive -> WAITING_CAR),
+WAITING_CAR = (car_pass -> CAR).
+
+-- Процесс пешехода
+PEDESTRIAN = (pedestrian_arrive -> WAITING_PEDESTRIAN),
+WAITING_PEDESTRIAN = (pedestrian_pass -> PEDESTRIAN).
+
+-- Основная система
+SYSTEM = (SMART_TRAFFIC_LIGHT || CAR || PEDESTRIAN).
+
+-- Спецификации безопасности
+property SAFETY = (red | yellow | green)*.
+property NO_CONFLICT = (red | yellow | green)*.
+
+-- Спецификации живости
+property LIVENESS = (red -> yellow -> green -> red)*.

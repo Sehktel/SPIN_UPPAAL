@@ -1,0 +1,151 @@
+-- IC3/PDR модель простого протокола (эхо-сервер)
+-- Демонстрирует автоматическую генерацию инвариантов
+-- Автор: Senior Developer
+-- Дата: 2024-12-19
+
+-- Проблема: k-индукция не может найти сложные инварианты
+-- Решение: IC3/PDR автоматически генерирует инварианты
+
+MODULE SimpleProtocol
+  -- Состояния протокола
+  VAR
+    client_state: {IDLE, SENDING, WAITING, RECEIVED};
+    server_state: {IDLE, RECEIVING, PROCESSING, SENDING};
+    message: {NONE, REQUEST, RESPONSE};
+    message_id: 0..255;
+    timeout_counter: 0..100;
+    retry_count: 0..3;
+    
+  -- Переменные для IC3/PDR
+  VAR
+    invariant_candidate: boolean;
+    strengthening_round: 0..50;
+    
+  INIT
+    client_state = IDLE &
+    server_state = IDLE &
+    message = NONE &
+    message_id = 0 &
+    timeout_counter = 0 &
+    retry_count = 0 &
+    invariant_candidate = TRUE &
+    strengthening_round = 0;
+
+  -- Переходы клиента
+  TRANS
+    -- Клиент отправляет запрос
+    (client_state = IDLE & server_state = IDLE) ->
+      (client_state' = SENDING &
+       server_state' = RECEIVING &
+       message' = REQUEST &
+       message_id' = message_id + 1 &
+       timeout_counter' = 0);
+       
+    -- Клиент ждет ответа
+    (client_state = SENDING) ->
+      (client_state' = WAITING &
+       timeout_counter' = timeout_counter + 1);
+       
+    -- Клиент получает ответ
+    (client_state = WAITING & server_state = SENDING & message = RESPONSE) ->
+      (client_state' = RECEIVED &
+       server_state' = IDLE &
+       message' = NONE &
+       timeout_counter' = 0);
+       
+    -- Таймаут - повторная отправка
+    (client_state = WAITING & timeout_counter >= 50 & retry_count < 3) ->
+      (client_state' = SENDING &
+       timeout_counter' = 0 &
+       retry_count' = retry_count + 1);
+       
+    -- Слишком много попыток - ошибка
+    (client_state = WAITING & timeout_counter >= 50 & retry_count >= 3) ->
+      (client_state' = IDLE &
+       timeout_counter' = 0 &
+       retry_count' = 0);
+       
+    -- Возврат в исходное состояние
+    (client_state = RECEIVED) ->
+      (client_state' = IDLE);
+
+  -- Переходы сервера
+  TRANS
+    -- Сервер получает запрос
+    (server_state = RECEIVING & message = REQUEST) ->
+      (server_state' = PROCESSING);
+      
+    -- Сервер обрабатывает запрос
+    (server_state = PROCESSING) ->
+      (server_state' = SENDING &
+       message' = RESPONSE);
+      
+    -- Сервер отправляет ответ
+    (server_state = SENDING) ->
+      (server_state' = IDLE);
+
+  -- Инварианты для проверки IC3/PDR
+  INVAR
+    -- Безопасность: клиент и сервер не могут быть в конфликтующих состояниях
+    !(client_state = SENDING & server_state = SENDING);
+    
+    -- Безопасность: сообщение не может быть REQUEST и RESPONSE одновременно
+    !(message = REQUEST & message_id > 0 & message_id' = message_id);
+    
+    -- Безопасность: таймаут не может быть отрицательным
+    timeout_counter >= 0;
+    
+    -- Безопасность: количество попыток ограничено
+    retry_count <= 3;
+    
+    -- Безопасность: ID сообщения в допустимом диапазоне
+    message_id <= 255;
+
+  -- LTL свойства для верификации
+  LTLSPEC
+    -- Живость: если клиент отправил запрос, он получит ответ
+    G(client_state = SENDING -> F client_state = RECEIVED);
+    
+    -- Безопасность: клиент не может быть в нескольких состояниях одновременно
+    G(!(client_state = SENDING & client_state = WAITING));
+    
+    -- Справедливость: система не может зависнуть
+    G(client_state = WAITING -> F (client_state = RECEIVED | client_state = IDLE));
+
+  -- Специфичные для IC3/PDR свойства
+  LTLSPEC
+    -- Инвариант: если сервер обрабатывает, то клиент ждет
+    G(server_state = PROCESSING -> client_state = WAITING);
+    
+    -- Инвариант: если есть REQUEST, то сервер не в IDLE
+    G(message = REQUEST -> server_state != IDLE);
+    
+    -- Инвариант: если есть RESPONSE, то клиент не в IDLE
+    G(message = RESPONSE -> client_state != IDLE);
+
+-- Основная система
+MODULE main
+  VAR
+    protocol: SimpleProtocol;
+    
+  -- Спецификации для IC3/PDR
+  SPEC
+    -- Автоматически генерируемые инварианты будут проверены здесь
+    -- IC3/PDR найдет дополнительные инварианты, которые k-индукция пропустит
+    
+-- Комментарии по сравнению с k-индукцией:
+--
+-- 1. K-индукция (max_k = 20):
+--    - Проверит свойства до глубины 20
+--    - Может не найти сложные инварианты
+--    - Быстро завершится, но может быть неполной
+--
+-- 2. IC3/PDR:
+--    - Автоматически генерирует инварианты
+--    - Найдет сложные свойства безопасности
+--    - Может работать дольше, но даст полный результат
+--
+-- 3. Ожидаемые улучшения IC3/PDR:
+--    - Дополнительные инварианты безопасности
+--    - Более точная верификация
+--    - Автоматическое обнаружение сложных свойств

@@ -1,0 +1,203 @@
+-- PAT модель конкурентной системы на CSP
+-- Автор: Senior Developer
+-- Описание: Модель системы с несколькими процессами, синхронизацией и взаимными блокировками
+
+-- Определение каналов для взаимодействия процессов
+channel start, work, complete, sync, wait, signal, resource_a, resource_b, resource_c;
+
+-- Процесс A - высокоприоритетный
+ProcessA = IDLE_A;
+IDLE_A = start -> WORKING_A;
+WORKING_A = work -> REQUEST_RESOURCE_A;
+REQUEST_RESOURCE_A = resource_a -> USING_RESOURCE_A;
+USING_RESOURCE_A = work -> RELEASE_RESOURCE_A;
+RELEASE_RESOURCE_A = resource_a -> COMPLETING_A;
+COMPLETING_A = complete -> IDLE_A;
+
+-- Процесс B - средний приоритет
+ProcessB = IDLE_B;
+IDLE_B = start -> WORKING_B;
+WORKING_B = work -> REQUEST_RESOURCE_B;
+REQUEST_RESOURCE_B = resource_b -> USING_RESOURCE_B;
+USING_RESOURCE_B = work -> REQUEST_RESOURCE_C;
+REQUEST_RESOURCE_C = resource_c -> USING_BOTH_RESOURCES;
+USING_BOTH_RESOURCES = work -> RELEASE_RESOURCE_C;
+RELEASE_RESOURCE_C = resource_c -> RELEASE_RESOURCE_B;
+RELEASE_RESOURCE_B = resource_b -> COMPLETING_B;
+COMPLETING_B = complete -> IDLE_B;
+
+-- Процесс C - низкий приоритет
+ProcessC = IDLE_C;
+IDLE_C = start -> WORKING_C;
+WORKING_C = work -> REQUEST_RESOURCE_C;
+REQUEST_RESOURCE_C = resource_c -> USING_RESOURCE_C;
+USING_RESOURCE_C = work -> RELEASE_RESOURCE_C;
+RELEASE_RESOURCE_C = resource_c -> COMPLETING_C;
+COMPLETING_C = complete -> IDLE_C;
+
+-- Процесс D - фоновый
+ProcessD = IDLE_D;
+IDLE_D = start -> WORKING_D;
+WORKING_D = work -> SYNC_D;
+SYNC_D = sync -> WAITING_D;
+WAITING_D = signal -> COMPLETING_D;
+COMPLETING_D = complete -> IDLE_D;
+
+-- Менеджер ресурсов
+ResourceManager = MANAGING;
+MANAGING = resource_a -> MANAGING;
+MANAGING = resource_b -> MANAGING;
+MANAGING = resource_c -> MANAGING;
+
+-- Планировщик процессов
+ProcessScheduler = SCHEDULING;
+SCHEDULING = start -> SCHEDULING;
+SCHEDULING = complete -> SCHEDULING;
+SCHEDULING = sync -> SCHEDULING;
+SCHEDULING = signal -> SCHEDULING;
+
+-- Система синхронизации
+SynchronizationSystem = SYNC_IDLE;
+SYNC_IDLE = sync -> SYNC_ACTIVE;
+SYNC_ACTIVE = signal -> SYNC_IDLE;
+
+-- Расширенная модель с очередью процессов
+-- Процесс с очередью
+QueuedProcess = IDLE_QUEUE;
+IDLE_QUEUE = start -> WORKING_QUEUE;
+WORKING_QUEUE = work -> REQUEST_QUEUE;
+REQUEST_QUEUE = resource_a -> USING_QUEUE;
+USING_QUEUE = work -> RELEASE_QUEUE;
+RELEASE_QUEUE = resource_a -> COMPLETING_QUEUE;
+COMPLETING_QUEUE = complete -> IDLE_QUEUE;
+
+-- Очередь процессов
+ProcessQueue = EMPTY;
+EMPTY = start -> QUEUED;
+QUEUED = start -> QUEUED;
+QUEUED = complete -> QUEUED;
+QUEUED = complete -> EMPTY;
+
+-- Система с очередью
+QueuedSystem = (QueuedProcess ||| ProcessQueue) 
+               [|{|start, complete|}|] 
+               QueuedEnvironment;
+
+-- Окружение с очередью
+QueuedEnvironment = GenerateQueuedEvents;
+GenerateQueuedEvents = start -> GenerateQueuedEvents;
+GenerateQueuedEvents = complete -> GenerateQueuedEvents;
+
+-- Модель с приоритетами и вытеснением
+-- Высокоприоритетный процесс с вытеснением
+PreemptiveProcess = IDLE_PREEMPT;
+IDLE_PREEMPT = start -> WORKING_PREEMPT;
+WORKING_PREEMPT = work -> REQUEST_PREEMPT;
+REQUEST_PREEMPT = resource_a -> USING_PREEMPT;
+USING_PREEMPT = work -> RELEASE_PREEMPT;
+USING_PREEMPT = start -> PREEMPTED;
+PREEMPTED = resource_a -> IDLE_PREEMPT;
+RELEASE_PREEMPT = resource_a -> COMPLETING_PREEMPT;
+COMPLETING_PREEMPT = complete -> IDLE_PREEMPT;
+
+-- Низкоприоритетный процесс (может быть вытеснен)
+LowPriorityProcess = IDLE_LOW;
+IDLE_LOW = start -> WORKING_LOW;
+WORKING_LOW = work -> REQUEST_LOW;
+REQUEST_LOW = resource_a -> USING_LOW;
+USING_LOW = work -> RELEASE_LOW;
+USING_LOW = start -> PREEMPTED_LOW;
+PREEMPTED_LOW = resource_a -> IDLE_LOW;
+RELEASE_LOW = resource_a -> COMPLETING_LOW;
+COMPLETING_LOW = complete -> IDLE_LOW;
+
+-- Система с вытеснением
+PreemptiveSystem = (PreemptiveProcess ||| LowPriorityProcess) 
+                   [|{|start, complete, resource_a|}|] 
+                   PreemptiveEnvironment;
+
+-- Окружение с вытеснением
+PreemptiveEnvironment = GeneratePreemptiveEvents;
+GeneratePreemptiveEvents = start -> GeneratePreemptiveEvents;
+GeneratePreemptiveEvents = complete -> GeneratePreemptiveEvents;
+
+-- Модель с взаимными блокировками
+-- Процесс, который может вызвать взаимную блокировку
+DeadlockProcess = IDLE_DEADLOCK;
+IDLE_DEADLOCK = start -> REQUEST_A;
+REQUEST_A = resource_a -> REQUEST_B;
+REQUEST_B = resource_b -> USING_BOTH;
+USING_BOTH = work -> RELEASE_B;
+RELEASE_B = resource_b -> RELEASE_A;
+RELEASE_A = resource_a -> COMPLETING_DEADLOCK;
+COMPLETING_DEADLOCK = complete -> IDLE_DEADLOCK;
+
+-- Другой процесс, который может вызвать взаимную блокировку
+DeadlockProcess2 = IDLE_DEADLOCK2;
+IDLE_DEADLOCK2 = start -> REQUEST_B2;
+REQUEST_B2 = resource_b -> REQUEST_A2;
+REQUEST_A2 = resource_a -> USING_BOTH2;
+USING_BOTH2 = work -> RELEASE_A2;
+RELEASE_A2 = resource_a -> RELEASE_B2;
+RELEASE_B2 = resource_b -> COMPLETING_DEADLOCK2;
+COMPLETING_DEADLOCK2 = complete -> IDLE_DEADLOCK2;
+
+-- Система с потенциальной взаимной блокировкой
+DeadlockSystem = (DeadlockProcess ||| DeadlockProcess2) 
+                 [|{|start, complete, resource_a, resource_b|}|] 
+                 DeadlockEnvironment;
+
+-- Окружение с взаимными блокировками
+DeadlockEnvironment = GenerateDeadlockEvents;
+GenerateDeadlockEvents = start -> GenerateDeadlockEvents;
+GenerateDeadlockEvents = complete -> GenerateDeadlockEvents;
+
+-- Модель с мониторами и условными переменными
+-- Монитор для синхронизации
+Monitor = MONITOR_IDLE;
+MONITOR_IDLE = sync -> MONITOR_ACTIVE;
+MONITOR_ACTIVE = signal -> MONITOR_IDLE;
+
+-- Процесс, использующий монитор
+MonitoredProcess = IDLE_MONITOR;
+IDLE_MONITOR = start -> WORKING_MONITOR;
+WORKING_MONITOR = work -> ENTER_MONITOR;
+ENTER_MONITOR = sync -> INSIDE_MONITOR;
+INSIDE_MONITOR = work -> EXIT_MONITOR;
+EXIT_MONITOR = signal -> COMPLETING_MONITOR;
+COMPLETING_MONITOR = complete -> IDLE_MONITOR;
+
+-- Система с мониторами
+MonitoredSystem = (MonitoredProcess ||| Monitor) 
+                  [|{|sync, signal|}|] 
+                  MonitoredEnvironment;
+
+-- Окружение с мониторами
+MonitoredEnvironment = GenerateMonitoredEvents;
+GenerateMonitoredEvents = start -> GenerateMonitoredEvents;
+GenerateMonitoredEvents = complete -> GenerateMonitoredEvents;
+
+-- Главная система (выберите одну из моделей)
+MainSystem = ProcessA ||| ProcessB ||| ProcessC ||| ProcessD ||| ResourceManager ||| ProcessScheduler ||| SynchronizationSystem;
+
+-- Спецификации для проверки
+-- Спецификация безопасности: система не должна иметь взаимных блокировок
+#assert MainSystem deadlockfree;
+
+-- Спецификация живости: каждый процесс должен иметь возможность завершиться
+#assert MainSystem [F start] W [F complete];
+
+-- Спецификация корректности: ресурсы должны быть освобождены после использования
+#assert MainSystem [F resource_a] W [F resource_a];
+
+-- Спецификация синхронизации: процессы должны синхронизироваться корректно
+#assert MainSystem [F sync] W [F signal];
+
+-- Спецификация приоритетов: высокоприоритетные процессы должны выполняться раньше
+#assert MainSystem [F start] W [F work];
+
+-- Спецификация взаимного исключения: только один процесс может использовать ресурс
+#assert MainSystem [F resource_a] W [F resource_a];
+
+-- Спецификация восстановления: система должна восстанавливаться после ошибок
+#assert MainSystem [F error] W [F retry];

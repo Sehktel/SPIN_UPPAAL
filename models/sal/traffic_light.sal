@@ -1,0 +1,152 @@
+-- SAL (Symbolic Analysis Laboratory) модель светофора
+-- Демонстрирует модульный подход и символический анализ
+-- SAL использует Yices SMT решатель для эффективной верификации
+
+-- Модуль таймера
+timer: CONTEXT = BEGIN
+    timer_state: TYPE = {idle, counting, timeout};
+    
+    timer: MODULE = BEGIN
+        STATE
+            state: timer_state;
+            count: NATURAL;
+            limit: NATURAL;
+        
+        INITIALIZATION
+            state = idle;
+            count = 0;
+            limit = 0;
+        
+        TRANSITION
+            -- Запуск таймера
+            start(l: NATURAL): 
+                state = idle
+                -->
+                state' = counting;
+                count' = 0;
+                limit' = l;
+            
+            -- Увеличение счетчика
+            tick:
+                state = counting AND count < limit
+                -->
+                count' = count + 1;
+                state' = IF count + 1 >= limit THEN timeout ELSE counting ENDIF;
+            
+            -- Сброс таймера
+            reset:
+                state = timeout OR state = counting
+                -->
+                state' = idle;
+                count' = 0;
+                limit' = 0;
+    END;
+END;
+
+-- Модуль светофора
+traffic_light: CONTEXT = BEGIN
+    light_color: TYPE = {red, yellow, green};
+    
+    traffic_light: MODULE = BEGIN
+        STATE
+            light: light_color;
+            cars_waiting: NATURAL;
+            pedestrian_waiting: BOOLEAN;
+            timer_inst: timer.timer;
+        
+        INITIALIZATION
+            light = red;
+            cars_waiting = 0;
+            pedestrian_waiting = FALSE;
+            timer_inst.state = timer.idle;
+            timer_inst.count = 0;
+            timer_inst.limit = 0;
+        
+        TRANSITION
+            -- Переход на желтый свет
+            to_yellow:
+                light = red AND (cars_waiting > 0 OR pedestrian_waiting)
+                -->
+                light' = yellow;
+                timer_inst' = timer_inst WITH [state := timer.counting, count := 0, limit := 3];
+            
+            -- Переход на зеленый свет
+            to_green:
+                light = yellow AND timer_inst.state = timer.timeout
+                -->
+                light' = green;
+                timer_inst' = timer_inst WITH [state := timer.counting, count := 0, limit := 8];
+            
+            -- Переход на красный свет
+            to_red:
+                light = green AND timer_inst.state = timer.timeout
+                -->
+                light' = red;
+                timer_inst' = timer_inst WITH [state := timer.idle, count := 0, limit := 0];
+                cars_waiting' = IF cars_waiting > 0 THEN cars_waiting - 1 ELSE 0 ENDIF;
+                pedestrian_waiting' = FALSE;
+            
+            -- Прибытие машины
+            car_arrives:
+                cars_waiting < 10
+                -->
+                cars_waiting' = cars_waiting + 1;
+            
+            -- Прибытие пешехода
+            pedestrian_arrives:
+                NOT pedestrian_waiting
+                -->
+                pedestrian_waiting' = TRUE;
+            
+            -- Обновление таймера
+            update_timer:
+                timer_inst.state = timer.counting
+                -->
+                timer_inst' = timer_inst WITH [count := timer_inst.count + 1];
+                timer_inst' = IF timer_inst.count + 1 >= timer_inst.limit 
+                              THEN timer_inst' WITH [state := timer.timeout]
+                              ELSE timer_inst'
+                              ENDIF;
+    END;
+END;
+
+-- Основной модуль системы
+main: MODULE = traffic_light.traffic_light;
+
+-- Спецификации для проверки
+-- LTL спецификации
+LTLSPEC
+    -- Безопасность: никогда не должно быть зеленого света при ожидающем пешеходе
+    G(NOT (pedestrian_waiting AND light = green));
+    
+    -- Живость: если пешеход ждет, то в конце концов получит зеленый свет
+    G(pedestrian_waiting -> F light = green);
+    
+    -- Справедливость: светофор не может "зависнуть" в одном состоянии
+    G(light = red -> F light = yellow);
+    G(light = yellow -> F light = green);
+    G(light = green -> F light = red);
+
+-- CTL спецификации
+CTLSPEC
+    -- Всегда возможно достичь зеленого света
+    AG EF light = green;
+    
+    -- Всегда возможно достичь красного света
+    AG EF light = red;
+    
+    -- Невозможно одновременно иметь зеленый и красный свет
+    NOT EF(light = green AND light = red);
+
+-- Инварианты
+INVARIANT
+    -- Светофор всегда должен быть в одном из трех состояний
+    light = red OR light = yellow OR light = green;
+    
+    -- Количество машин должно быть в допустимых пределах
+    cars_waiting <= 10;
+    
+    -- Таймер должен быть в корректном состоянии
+    (timer_inst.state = timer.idle AND timer_inst.count = 0 AND timer_inst.limit = 0) OR
+    (timer_inst.state = timer.counting AND timer_inst.count < timer_inst.limit) OR
+    (timer_inst.state = timer.timeout AND timer_inst.count >= timer_inst.limit);

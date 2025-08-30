@@ -1,0 +1,147 @@
+-- NuSMV модель верификации протоколов связи
+-- Автор: Senior Developer
+-- Описание: Модель протокола с подтверждением, таймаутами и обработкой ошибок
+
+MODULE main
+VAR
+    -- Состояния отправителя
+    sender_state: {IDLE, SENDING, WAITING_ACK, TIMEOUT, ERROR};
+    
+    -- Состояния получателя
+    receiver_state: {IDLE, RECEIVING, PROCESSING, SENDING_ACK, ERROR};
+    
+    -- Данные сообщения
+    message_id: 0..255;
+    message_data: 0..15;
+    
+    -- Флаги состояния
+    message_sent: boolean;
+    ack_received: boolean;
+    timeout_expired: boolean;
+    corruption_detected: boolean;
+    
+    -- Счетчики
+    retry_count: 0..3;
+    timeout_counter: 0..10;
+    
+    -- Канал связи (может быть ненадежным)
+    channel_state: {CLEAR, CORRUPTED, LOST};
+
+ASSIGN
+    -- Инициализация
+    init(sender_state) := IDLE;
+    init(receiver_state) := IDLE;
+    init(message_id) := 0;
+    init(message_data) := 0;
+    init(message_sent) := FALSE;
+    init(ack_received) := FALSE;
+    init(timeout_expired) := FALSE;
+    init(corruption_detected) := FALSE;
+    init(retry_count) := 0;
+    init(timeout_counter) := 0;
+    init(channel_state) := CLEAR;
+    
+    -- Логика отправителя
+    next(sender_state) := case
+        sender_state = IDLE & message_data > 0: SENDING;
+        sender_state = SENDING & channel_state != LOST: WAITING_ACK;
+        sender_state = WAITING_ACK & ack_received: IDLE;
+        sender_state = WAITING_ACK & timeout_expired & retry_count < 3: TIMEOUT;
+        sender_state = WAITING_ACK & timeout_expired & retry_count >= 3: ERROR;
+        sender_state = TIMEOUT: SENDING;
+        sender_state = ERROR & retry_count < 3: IDLE;
+        TRUE: sender_state;
+    esac;
+    
+    -- Логика получателя
+    next(receiver_state) := case
+        receiver_state = IDLE & message_sent & channel_state != LOST: RECEIVING;
+        receiver_state = RECEIVING & !corruption_detected: PROCESSING;
+        receiver_state = RECEIVING & corruption_detected: ERROR;
+        receiver_state = PROCESSING: SENDING_ACK;
+        receiver_state = SENDING_ACK: IDLE;
+        receiver_state = ERROR: IDLE;
+        TRUE: receiver_state;
+    esac;
+    
+    -- Обработка сообщений
+    next(message_sent) := case
+        sender_state = SENDING: TRUE;
+        sender_state = IDLE: FALSE;
+        TRUE: message_sent;
+    esac;
+    
+    next(ack_received) := case
+        receiver_state = SENDING_ACK: TRUE;
+        sender_state = IDLE: FALSE;
+        TRUE: ack_received;
+    esac;
+    
+    -- Таймауты
+    next(timeout_counter) := case
+        sender_state = WAITING_ACK: min(10, timeout_counter + 1);
+        sender_state = IDLE | sender_state = SENDING: 0;
+        TRUE: timeout_counter;
+    esac;
+    
+    next(timeout_expired) := case
+        timeout_counter >= 10: TRUE;
+        sender_state = IDLE: FALSE;
+        TRUE: timeout_expired;
+    esac;
+    
+    -- Счетчик повторных попыток
+    next(retry_count) := case
+        sender_state = TIMEOUT: retry_count + 1;
+        sender_state = IDLE: 0;
+        TRUE: retry_count;
+    esac;
+    
+    -- Обновление ID сообщения
+    next(message_id) := case
+        sender_state = SENDING & message_id < 255: message_id + 1;
+        sender_state = SENDING & message_id >= 255: 0;
+        TRUE: message_id;
+    esac;
+    
+    -- Симуляция ненадежности канала
+    next(channel_state) := case
+        channel_state = CLEAR: {CLEAR, CORRUPTED, LOST};
+        channel_state = CORRUPTED: CLEAR;
+        channel_state = LOST: CLEAR;
+        TRUE: channel_state;
+    esac;
+    
+    -- Обнаружение коррупции данных
+    next(corruption_detected) := case
+        channel_state = CORRUPTED: TRUE;
+        receiver_state = IDLE: FALSE;
+        TRUE: corruption_detected;
+    esac;
+
+-- Спецификации корректности протокола
+SPEC AG(sender_state = SENDING -> EX(receiver_state = RECEIVING | receiver_state = ERROR))
+SPEC AG(receiver_state = PROCESSING -> AX(receiver_state = SENDING_ACK))
+SPEC AG(sender_state = WAITING_ACK -> (ack_received | timeout_expired))
+
+-- Спецификации безопасности
+SPEC AG(sender_state = ERROR -> retry_count >= 3)
+SPEC AG(receiver_state = ERROR -> corruption_detected)
+SPEC AG(timeout_expired -> timeout_counter >= 10)
+
+-- Спецификации живости (liveness)
+SPEC AG(sender_state = IDLE -> EF(sender_state = SENDING))
+SPEC AG(receiver_state = IDLE -> EF(receiver_state = RECEIVING))
+
+-- Спецификации взаимного исключения
+SPEC AG(!(sender_state = SENDING & receiver_state = SENDING_ACK))
+SPEC AG(!(sender_state = WAITING_ACK & receiver_state = IDLE))
+
+-- Спецификации восстановления
+SPEC AG(sender_state = ERROR -> EF(sender_state = IDLE))
+SPEC AG(receiver_state = ERROR -> EF(receiver_state = IDLE))
+
+-- Спецификации ограничений
+SPEC AG(retry_count <= 3)
+SPEC AG(timeout_counter <= 10)
+SPEC AG(message_id <= 255)

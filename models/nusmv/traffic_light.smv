@@ -1,0 +1,93 @@
+-- NuSMV модель светофора - демонстрация символического анализа
+-- Символический анализ использует BDD (Binary Decision Diagrams) для эффективной работы с большими пространствами состояний
+
+MODULE traffic_light
+VAR
+    -- Состояние светофора (символически представлено как 3 бита)
+    light_state : {red, yellow, green};
+    
+    -- Количество ожидающих машин (символически представлено как битовый вектор)
+    cars_waiting : 0..7;  -- 3 бита для представления 0-7 машин
+    
+    -- Ожидание пешехода
+    pedestrian_waiting : boolean;
+    
+    -- Таймер для управления переходами
+    timer : 0..10;
+
+ASSIGN
+    -- Начальное состояние
+    init(light_state) := red;
+    init(cars_waiting) := 0;
+    init(pedestrian_waiting) := false;
+    init(timer) := 0;
+    
+    -- Переходы состояний светофора
+    next(light_state) := case
+        light_state = red & timer >= 5 & cars_waiting > 0 : yellow;
+        light_state = yellow & timer >= 3 : green;
+        light_state = green & timer >= 8 : red;
+        light_state = red & timer >= 5 & pedestrian_waiting : yellow;
+        TRUE : light_state;
+    esac;
+    
+    -- Обновление таймера
+    next(timer) := case
+        next(light_state) != light_state : 0;  -- Сброс при смене состояния
+        TRUE : timer + 1;
+    esac;
+    
+    -- Изменение количества машин
+    next(cars_waiting) := case
+        light_state = green & timer = 0 : max(0, cars_waiting - 1);  -- Машина проехала
+        cars_waiting < 7 : cars_waiting + {0, 1};  -- Новая машина может подъехать
+        TRUE : cars_waiting;
+    esac;
+    
+    -- Изменение состояния пешехода
+    next(pedestrian_waiting) := case
+        light_state = green & timer = 0 & pedestrian_waiting : false;  -- Пешеход перешел
+        !pedestrian_waiting : {TRUE, FALSE};  -- Пешеход может появиться
+        TRUE : pedestrian_waiting;
+    esac;
+
+-- Спецификации LTL для проверки
+LTLSPEC
+    -- Безопасность: никогда не должно быть зеленого света при ожидающем пешеходе
+    G(!(pedestrian_waiting & light_state = green));
+    
+    -- Безопасность: никогда не должно быть одновременно зеленого света и ожидающих машин
+    G(!(light_state = green & cars_waiting > 0));
+    
+    -- Живость: если пешеход ждет, то в конце концов получит зеленый свет
+    G(pedestrian_waiting -> F light_state = green);
+    
+    -- Справедливость: светофор не может "зависнуть" в одном состоянии
+    G(light_state = red -> F light_state = yellow);
+    G(light_state = yellow -> F light_state = green);
+    G(light_state = green -> F light_state = red);
+
+-- Спецификации CTL для демонстрации возможностей
+CTLSPEC
+    -- Всегда возможно достичь зеленого света
+    AG EF light_state = green;
+    
+    -- Всегда возможно достичь красного света
+    AG EF light_state = red;
+    
+    -- Если пешеход ждет, то возможно получить зеленый свет
+    AG(pedestrian_waiting -> EF light_state = green);
+    
+    -- Невозможно одновременно иметь зеленый и красный свет
+    !EF(light_state = green & light_state = red);
+
+-- Инварианты для проверки безопасности
+INVAR
+    -- Светофор всегда должен быть в одном из трех состояний
+    light_state = red | light_state = yellow | light_state = green;
+    
+    -- Количество машин должно быть в допустимых пределах
+    cars_waiting >= 0 & cars_waiting <= 7;
+    
+    -- Таймер должен быть в допустимых пределах
+    timer >= 0 & timer <= 10;
