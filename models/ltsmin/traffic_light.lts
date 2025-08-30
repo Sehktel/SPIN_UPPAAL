@@ -50,3 +50,5 @@ liveness: pedestrian_waiting -> F green
 
 # Справедливость: светофор не может "зависнуть" в одном состоянии
 fairness: red -> F yellow && yellow -> F green && green -> F red
+
+

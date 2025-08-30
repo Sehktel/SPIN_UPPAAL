@@ -263,3 +263,5 @@ if __name__ == "__main__":
         print("Установите Spot: pip install spot")
     except Exception as e:
         print(f"Ошибка при выполнении: {e}")
+
+

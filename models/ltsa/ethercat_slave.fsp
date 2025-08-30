@@ -233,3 +233,5 @@ CompleteEtherCATSystem = EtherCATMaster || MultipleSlaves.
 property MASTER_SLAVE_SYNC = [master_config] -> <sync_complete>.
 property SLAVE_INDEPENDENCE = [SLAVE_ID: SLAVE_ID] @ [state_transition] -> <state_changed>.
 property SYSTEM_SCALABILITY = [SLAVE_COUNT: SLAVE_COUNT] @ [init_complete] -> <boot_complete>.
+
+

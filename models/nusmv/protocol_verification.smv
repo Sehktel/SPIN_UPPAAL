@@ -145,3 +145,5 @@ SPEC AG(receiver_state = ERROR -> EF(receiver_state = IDLE))
 SPEC AG(retry_count <= 3)
 SPEC AG(timeout_counter <= 10)
 SPEC AG(message_id <= 255)
+
+

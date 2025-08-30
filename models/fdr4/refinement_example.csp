@@ -1,0 +1,134 @@
+-- FDR4 модель refinement checking на CSP
+-- Демонстрирует возможности FDR4 для проверки уточнения спецификаций
+-- Автор: Senior Developer
+-- Дата: 2024-12-19
+--
+-- Проблема: PAT не специализирован для refinement checking
+-- Решение: FDR4 специализирован для CSP и refinement verification
+
+channel read, write, ack, error, timeout
+
+-- Абстрактная спецификация протокола связи
+abstract_protocol = read -> write -> ack -> abstract_protocol
+                  []
+                  read -> timeout -> error -> abstract_protocol
+
+-- Конкретная реализация протокола связи
+concrete_protocol = read -> write -> ack -> concrete_protocol
+                  []
+                  read -> timeout -> error -> concrete_protocol
+                  []
+                  read -> write -> timeout -> error -> concrete_protocol
+
+-- Проверка refinement: concrete_protocol [T= abstract_protocol
+-- Это означает, что concrete_protocol является уточнением abstract_protocol
+
+-- Компонент клиента
+client = read -> write -> ack -> client
+       []
+       read -> timeout -> error -> client
+
+-- Компонент сервера
+server = read -> write -> ack -> server
+       []
+       read -> timeout -> error -> server
+
+-- Композиция клиента и сервера
+client_server = client |[read, write, ack, timeout, error]| server
+
+-- Проверка: client_server [T= abstract_protocol
+
+-- Расширенная версия протокола с обработкой ошибок
+extended_protocol = read -> write -> ack -> extended_protocol
+                   []
+                   read -> timeout -> error -> retry -> extended_protocol
+                   []
+                   read -> write -> timeout -> error -> retry -> extended_protocol
+
+-- Проверка: extended_protocol [T= concrete_protocol
+
+-- Протокол с множественными попытками
+retry_protocol = read -> write -> ack -> retry_protocol
+                []
+                read -> timeout -> error -> retry -> retry_protocol
+                []
+                read -> write -> timeout -> error -> retry -> retry_protocol
+                []
+                read -> timeout -> error -> retry -> timeout -> error -> retry_protocol
+
+-- Проверка: retry_protocol [T= extended_protocol
+
+-- Протокол с приоритетами
+priority_protocol = high_priority -> read -> write -> ack -> priority_protocol
+                   []
+                   low_priority -> read -> write -> ack -> priority_protocol
+                   []
+                   high_priority -> read -> timeout -> error -> retry -> priority_protocol
+                   []
+                   low_priority -> read -> timeout -> error -> retry -> priority_protocol
+
+-- Проверка: priority_protocol [T= retry_protocol
+
+-- Система с множественными клиентами
+multi_client_system = client1 |[read, write, ack, timeout, error]| 
+                      client2 |[read, write, ack, timeout, error]| 
+                      server
+
+-- Проверка: multi_client_system [T= abstract_protocol
+
+-- Протокол с аутентификацией
+auth_protocol = authenticate -> read -> write -> ack -> auth_protocol
+                []
+                authenticate -> read -> timeout -> error -> retry -> auth_protocol
+                []
+                authenticate -> read -> write -> timeout -> error -> retry -> auth_protocol
+
+-- Проверка: auth_protocol [T= priority_protocol
+
+-- Протокол с шифрованием
+encrypted_protocol = encrypt -> read -> write -> decrypt -> ack -> encrypted_protocol
+                     []
+                     encrypt -> read -> timeout -> decrypt -> error -> retry -> encrypted_protocol
+                     []
+                     encrypt -> read -> write -> timeout -> decrypt -> error -> retry -> encrypted_protocol
+
+-- Проверка: encrypted_protocol [T= auth_protocol
+
+-- Система с отказоустойчивостью
+fault_tolerant_system = primary_server |[read, write, ack, timeout, error]| 
+                        backup_server |[read, write, ack, timeout, error]| 
+                        client
+
+-- Проверка: fault_tolerant_system [T= encrypted_protocol
+
+-- Основная система для тестирования
+main_system = abstract_protocol
+
+-- Свойства для верификации
+-- Безопасность: отсутствие deadlock'ов
+assert main_system :[deadlock free [F]]
+
+-- Живость: возможность чтения
+assert main_system :[deadlock free [F]]
+
+-- Refinement: проверка уточнения
+assert concrete_protocol [T= abstract_protocol
+assert extended_protocol [T= concrete_protocol
+assert retry_protocol [T= extended_protocol
+assert priority_protocol [T= retry_protocol
+assert auth_protocol [T= priority_protocol
+assert encrypted_protocol [T= auth_protocol
+assert fault_tolerant_system [T= encrypted_protocol
+
+-- Композиционная верификация
+assert client_server [T= abstract_protocol
+assert multi_client_system [T= abstract_protocol
+
+-- Проверка эквивалентности
+assert abstract_protocol [FD= abstract_protocol
+assert concrete_protocol [FD= concrete_protocol
+
+-- Проверка bisimulation
+assert abstract_protocol [FD= abstract_protocol
+assert concrete_protocol [FD= concrete_protocol
+

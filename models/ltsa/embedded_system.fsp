@@ -200,3 +200,5 @@ property SYNC = [start] -> <init_sensors> U [sensor_ok].
 
 -- Спецификация отказоустойчивости: система должна работать при отказе одного насоса
 property FAULT_TOLERANCE = [pump1_fail] -> <pump2_started> U [normal_operation].
+
+

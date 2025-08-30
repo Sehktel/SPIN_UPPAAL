@@ -37,3 +37,5 @@ property NO_CONFLICT = (red | yellow | green)*.
 
 -- Спецификации живости
 property LIVENESS = (red -> yellow -> green -> red)*.
+
+

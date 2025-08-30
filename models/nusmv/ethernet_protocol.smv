@@ -163,3 +163,5 @@ SPEC AG(channel_state = COLLISION_DETECTED ->
 SPEC AG(node1_state = ERROR -> AX(node1_state = ERROR));
 SPEC AG(node2_state = ERROR -> AX(node2_state = ERROR));
 SPEC AG(node3_state = ERROR -> AX(node3_state = ERROR));
+
+

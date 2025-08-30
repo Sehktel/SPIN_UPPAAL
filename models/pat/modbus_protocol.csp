@@ -250,3 +250,5 @@ MainSystem = ModbusMaster ||| ModbusSlave ||| RequestValidator |||
 #assert MainSystem |= [](write_single_register -> <>(modbus_response | modbus_error));
 #assert MainSystem |= [](read_coils -> <>(modbus_response | modbus_error));
 #assert MainSystem |= [](write_single_coil -> <>(modbus_response | modbus_error));
+
+

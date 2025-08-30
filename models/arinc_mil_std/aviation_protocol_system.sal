@@ -1,0 +1,258 @@
+-- Авиационная система связи с протоколами ARINC 429 и MIL-STD-1553
+-- Aviation Communication System with ARINC 429 and MIL-STD-1553 protocols
+-- Автор: AI Assistant
+-- Дата: 2024-12-19
+
+CONTEXT aviation_protocol_context
+BEGIN
+    -- Типы данных для ARINC 429
+    ARINC429_Message: TYPE = [
+        label: [0..255],           -- Метка сообщения (8 бит)
+        source: [0..3],            -- Источник (2 бита)
+        data: [0..524287],         -- Данные (19 бит)
+        sign_status: [0..3],       -- Знак/статус (2 бита)
+        parity: BOOLEAN            -- Контроль четности (1 бит)
+    ];
+    
+    -- Типы данных для MIL-STD-1553
+    MIL1553_Message: TYPE = [
+        sync: [0..7],              -- Синхронизация (3 бита)
+        data: [0..65535],          -- Данные (16 бит)
+        parity: BOOLEAN            -- Контроль четности (1 бит)
+    ];
+    
+    -- Состояния устройств
+    DeviceStatus: TYPE = [INIT, ACTIVE, FAILED, MAINTENANCE];
+    
+    -- Типы сообщений
+    MessageType: TYPE = [DATA, COMMAND, STATUS, MAINTENANCE];
+    
+    -- Приоритеты сообщений
+    MessagePriority: TYPE = [CRITICAL, HIGH, NORMAL, LOW];
+    
+    -- Состояния шины
+    BusState: TYPE = [IDLE, TRANSMITTING, RECEIVING, ERROR];
+    
+    -- Константы системы
+    MAX_DEVICES: NATURAL = 32;
+    MAX_MESSAGE_QUEUE: NATURAL = 100;
+    ARINC_TIMEOUT: NATURAL = 1000;    -- 1ms в микросекундах
+    MIL1553_TIMEOUT: NATURAL = 100;   -- 100 микросекунд
+    
+    -- Типы ошибок
+    ErrorType: TYPE = [NONE, TIMEOUT, PARITY, FRAME, BUSY];
+END;
+
+aviation_system: MODULE
+BEGIN
+    -- Внутренние переменные
+    LOCAL
+        -- Состояние шины ARINC 429
+        arinc_bus_state: BusState := IDLE,
+        arinc_bus_utilization: REAL := 0.0,
+        arinc_error_count: NATURAL := 0,
+        
+        -- Состояние шины MIL-STD-1553
+        mil1553_bus_state: BusState := IDLE,
+        mil1553_bus_utilization: REAL := 0.0,
+        mil1553_error_count: NATURAL := 0,
+        
+        -- Устройства ARINC 429
+        arinc_devices: ARRAY [0..MAX_DEVICES-1] OF DeviceStatus := 
+            CONSTANT(INIT, [0..MAX_DEVICES-1]),
+        arinc_message_queue: ARRAY [0..MAX_MESSAGE_QUEUE-1] OF ARINC429_Message,
+        arinc_queue_head: NATURAL := 0,
+        arinc_queue_tail: NATURAL := 0,
+        
+        -- Устройства MIL-STD-1553
+        mil1553_devices: ARRAY [0..MAX_DEVICES-1] OF DeviceStatus := 
+            CONSTANT(INIT, [0..MAX_DEVICES-1]),
+        mil1553_message_queue: ARRAY [0..MAX_MESSAGE_QUEUE-1] OF MIL1553_Message,
+        mil1553_queue_head: NATURAL := 0,
+        mil1553_queue_tail: NATURAL := 0,
+        
+        -- Системное время
+        system_time: NATURAL := 0,
+        
+        -- Статистика
+        total_messages_sent: NATURAL := 0,
+        total_messages_received: NATURAL := 0,
+        total_errors: NATURAL := 0
+        
+    EXPORT
+        -- Публичные операции
+        init_system,
+        send_arinc_message,
+        send_mil1553_message,
+        receive_arinc_message,
+        receive_mil1553_message,
+        check_system_health,
+        emergency_shutdown
+        
+    INITIALIZATION
+        arinc_bus_state = IDLE AND
+        mil1553_bus_state = IDLE AND
+        arinc_bus_utilization = 0.0 AND
+        mil1553_bus_utilization = 0.0 AND
+        system_time = 0
+        
+    TRANSITION
+        -- Инициализация системы
+        [init_system]:
+            TRUE ->
+            arinc_bus_state' = IDLE,
+            mil1553_bus_state' = IDLE,
+            arinc_bus_utilization' = 0.0,
+            mil1553_bus_utilization' = 0.0,
+            system_time' = 0,
+            total_messages_sent' = 0,
+            total_messages_received' = 0,
+            total_errors' = 0;
+            
+        -- Отправка сообщения ARINC 429
+        [send_arinc_message]:
+            arinc_bus_state = IDLE AND
+            arinc_queue_tail < MAX_MESSAGE_QUEUE ->
+            arinc_bus_state' = TRANSMITTING,
+            arinc_message_queue[arinc_queue_tail]' = 
+                ARINC429_Message{
+                    label := 1,
+                    source := 0,
+                    data := 0,
+                    sign_status := 0,
+                    parity := TRUE
+                },
+            arinc_queue_tail' = (arinc_queue_tail + 1) MOD MAX_MESSAGE_QUEUE,
+            total_messages_sent' = total_messages_sent + 1;
+            
+        -- Завершение передачи ARINC 429
+        [arinc_transmission_complete]:
+            arinc_bus_state = TRANSMITTING ->
+            arinc_bus_state' = IDLE,
+            system_time' = system_time + ARINC_TIMEOUT;
+            
+        -- Отправка сообщения MIL-STD-1553
+        [send_mil1553_message]:
+            mil1553_bus_state = IDLE AND
+            mil1553_queue_tail < MAX_MESSAGE_QUEUE ->
+            mil1553_bus_state' = TRANSMITTING,
+            mil1553_message_queue[mil1553_queue_tail]' = 
+                MIL1553_Message{
+                    sync := 1,
+                    data := 0,
+                    parity := TRUE
+                },
+            mil1553_queue_tail' = (mil1553_queue_tail + 1) MOD MAX_MESSAGE_QUEUE,
+            total_messages_sent' = total_messages_sent + 1;
+            
+        -- Завершение передачи MIL-STD-1553
+        [mil1553_transmission_complete]:
+            mil1553_bus_state = TRANSMITTING ->
+            mil1553_bus_state' = IDLE,
+            system_time' = system_time + MIL1553_TIMEOUT;
+            
+        -- Обработка ошибок ARINC 429
+        [arinc_error_handling]:
+            arinc_bus_state = TRANSMITTING ->
+            arinc_bus_state' = ERROR,
+            arinc_error_count' = arinc_error_count + 1,
+            total_errors' = total_errors + 1;
+            
+        -- Обработка ошибок MIL-STD-1553
+        [mil1553_error_handling]:
+            mil1553_bus_state = TRANSMITTING ->
+            mil1553_bus_state' = ERROR,
+            mil1553_error_count' = mil1553_error_count + 1,
+            total_errors' = total_errors + 1;
+            
+        -- Восстановление после ошибки
+        [recovery_from_error]:
+            (arinc_bus_state = ERROR OR mil1553_bus_state = ERROR) ->
+            arinc_bus_state' = IDLE,
+            mil1553_bus_state' = IDLE;
+            
+        -- Проверка здоровья системы
+        [check_system_health]:
+            TRUE ->
+            system_time' = system_time + 1;
+            
+        -- Аварийное отключение
+        [emergency_shutdown]:
+            TRUE ->
+            arinc_bus_state' = ERROR,
+            mil1553_bus_state' = ERROR;
+            
+END;
+
+-- Модуль для верификации свойств
+verification_properties: MODULE
+BEGIN
+    -- Свойства безопасности
+    -- P1: Шина не может быть одновременно в состоянии передачи и приема
+    safety_property_1: THEOREM
+        aviation_system |- 
+        G(NOT(arinc_bus_state = TRANSMITTING AND arinc_bus_state = RECEIVING));
+        
+    -- P2: Количество ошибок не может превышать количество отправленных сообщений
+    safety_property_2: THEOREM
+        aviation_system |-
+        G(total_errors <= total_messages_sent);
+        
+    -- P3: Системное время всегда увеличивается
+    safety_property_3: THEOREM
+        aviation_system |-
+        G(system_time' > system_time);
+        
+    -- Свойства живости
+    -- L1: Если шина в состоянии передачи, то она должна вернуться в IDLE
+    liveness_property_1: THEOREM
+        aviation_system |-
+        G(arinc_bus_state = TRANSMITTING -> F(arinc_bus_state = IDLE));
+        
+    -- L2: Система должна обрабатывать сообщения
+    liveness_property_2: THEOREM
+        aviation_system |-
+        G(total_messages_sent > 0 -> F(total_messages_received > 0));
+        
+    -- Свойства времени
+    -- T1: Передача ARINC 429 должна завершиться в течение таймаута
+    timing_property_1: THEOREM
+        aviation_system |-
+        G(arinc_bus_state = TRANSMITTING -> 
+          F(system_time' >= system_time + ARINC_TIMEOUT));
+          
+    -- T2: Передача MIL-STD-1553 должна завершиться в течение таймаута
+    timing_property_2: THEOREM
+        aviation_system |-
+        G(mil1553_bus_state = TRANSMITTING -> 
+          F(system_time' >= system_time + MIL1553_TIMEOUT));
+          
+END;
+
+-- Модуль для тестирования
+test_scenarios: MODULE
+BEGIN
+    -- Тестовый сценарий 1: Нормальная работа
+    test_normal_operation: THEOREM
+        aviation_system |-
+        init_system;
+        send_arinc_message;
+        arinc_transmission_complete;
+        send_mil1553_message;
+        mil1553_transmission_complete;
+        
+    -- Тестовый сценарий 2: Обработка ошибок
+    test_error_handling: THEOREM
+        aviation_system |-
+        init_system;
+        send_arinc_message;
+        arinc_error_handling;
+        recovery_from_error;
+        
+    -- Тестовый сценарий 3: Аварийное отключение
+    test_emergency_shutdown: THEOREM
+        aviation_system |-
+        init_system;
+        emergency_shutdown;
+        
+END;

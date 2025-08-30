@@ -1,0 +1,661 @@
+// ============================================================================
+// ТЕОРЕТИЧЕСКАЯ ВВОДНАЯ ЧАСТЬ: АГЕНТНО-ОРИЕНТИРОВАННОЕ МОДЕЛИРОВАНИЕ
+// ============================================================================
+//
+// Агентно-ориентированное моделирование (Agent-Oriented Modeling, AOM) - это
+// парадигма моделирования, основанная на концепции автономных, интерактивных
+// сущностей (агентов), которые способны принимать решения и взаимодействовать
+// друг с другом для достижения общих или индивидуальных целей.
+//
+// ОСНОВНЫЕ ПРИНЦИПЫ:
+// ==================
+//
+// 1. АГЕНТЫ (Agents):
+//    - Автономные сущности с собственным состоянием и поведением
+//    - Способны принимать решения на основе внутренней логики
+//    - Имеют локальные цели и ограничения
+//    - Могут адаптироваться к изменениям окружения
+//
+// 2. ВЗАИМОДЕЙСТВИЕ (Interaction):
+//    - Агенты обмениваются сообщениями (message-passing)
+//    - Асинхронная коммуникация через очереди сообщений
+//    - Возможность синхронного и асинхронного взаимодействия
+//    - Протоколы взаимодействия и контракты
+//
+// 3. ОКРУЖЕНИЕ (Environment):
+//    - Общее пространство, в котором существуют агенты
+//    - Ресурсы, доступные для агентов
+//    - Правила и ограничения взаимодействия
+//    - Динамические изменения условий
+//
+// 4. ЭМЕРДЖЕНТНОСТЬ (Emergence):
+//    - Глобальное поведение системы возникает из локальных взаимодействий
+//    - Нелинейные эффекты и самоорганизация
+//    - Непредсказуемость на основе локальных правил
+//
+// TIMED REBECA - СПЕЦИФИКАЦИЯ:
+// =============================
+//
+// Timed Rebeca - это расширение языка Rebeca (Reactive Objects Language),
+// добавляющее временные ограничения и временную логику к агентно-ориентированному
+// моделированию.
+//
+// КЛЮЧЕВЫЕ ОСОБЕННОСТИ:
+// ----------------------
+//
+// 1. Временные ограничения (Timing Constraints):
+//    - Дедлайны для сообщений и операций
+//    - Периодические события
+//    - Таймауты и задержки
+//    - Синхронизация по времени
+//
+// 2. Временная логика (Temporal Logic):
+//    - CTL (Computation Tree Logic) с временными операторами
+//    - LTL (Linear Temporal Logic) для временных свойств
+//    - Верификация временных требований
+//    - Анализ производительности
+//
+// 3. Детерминированность (Determinism):
+//    - Предсказуемое поведение при одинаковых входных данных
+//    - Воспроизводимость результатов
+//    - Отладка и тестирование
+//    - Валидация моделей
+//
+// АРХИТЕКТУРНЫЕ ПАТТЕРНЫ:
+// ========================
+//
+// 1. Master-Slave (Главный-Подчиненный):
+//    - Централизованное управление
+//    - Распределение задач
+//    - Мониторинг состояния
+//    - Координация действий
+//
+// 2. Peer-to-Peer (Равный-к-Равному):
+//    - Децентрализованное взаимодействие
+//    - Самоорганизация
+//    - Распределенная координация
+//    - Отказоустойчивость
+//
+// 3. Hierarchical (Иерархический):
+//    - Многоуровневая структура
+//    - Делегирование полномочий
+//    - Агрегация информации
+//    - Масштабируемость
+//
+// 4. Blackboard (Доска объявлений):
+//    - Общее хранилище данных
+//    - Асинхронное взаимодействие
+//    - Слабая связанность
+//    - Гибкость архитектуры
+//
+// ПРИМЕНЕНИЕ В ПРОМЫШЛЕННОСТИ:
+// ==============================
+//
+// 1. Промышленные системы управления:
+//    - Автоматизация производственных процессов
+//    - Управление роботами и конвейерами
+//    - Мониторинг оборудования
+//    - Планирование производства
+//
+// 2. Сетевые протоколы:
+//    - Маршрутизация в компьютерных сетях
+//    - Распределенные алгоритмы
+//    - Протоколы консенсуса
+//    - Сетевая безопасность
+//
+// 3. Робототехника:
+//    - Координация роботов
+//    - Коллективное поведение
+//    - Адаптация к окружению
+//    - Обучение и эволюция
+//
+// 4. Энергетические системы:
+//    - Управление электросетями
+//    - Балансировка нагрузки
+//    - Интеграция возобновляемых источников
+//    - Оптимизация потребления
+//
+// ПРЕИМУЩЕСТВА АГЕНТНО-ОРИЕНТИРОВАННОГО МОДЕЛИРОВАНИЯ:
+// =====================================================
+//
+// 1. Модульность и переиспользование
+// 2. Масштабируемость и параллелизм
+// 3. Отказоустойчивость и надежность
+// 4. Адаптивность и гибкость
+// 5. Естественность моделирования сложных систем
+// 6. Возможность верификации и анализа
+//
+// НЕДОСТАТКИ И ОГРАНИЧЕНИЯ:
+// ==========================
+//
+// 1. Сложность отладки асинхронных взаимодействий
+// 2. Проблемы с детерминированностью
+// 3. Сложность анализа глобального поведения
+// 4. Высокие требования к ресурсам
+// 5. Сложность обучения и внедрения
+//
+// ============================================================================
+// ПРАКТИЧЕСКАЯ РЕАЛИЗАЦИЯ: РАСПРЕДЕЛЕННАЯ СИСТЕМА УПРАВЛЕНИЯ
+// ============================================================================
+//
+// Distributed Control System Model in Timed Rebeca
+// Модель распределенной системы управления на Timed Rebeca
+// Автор: Senior Developer
+// Дата: 2024-12-19
+
+// Импорты
+import java.util.*;
+import java.time.*;
+
+// ============================================================================
+// ГЛАВНЫЙ АКТОР СИСТЕМЫ УПРАВЛЕНИЯ (MASTER AGENT)
+// ============================================================================
+//
+// MainController реализует паттерн Master-Slave, где главный актор:
+// - Координирует работу всех подчиненных акторов
+// - Управляет жизненным циклом системы
+// - Обрабатывает глобальные события
+// - Поддерживает системное время и синхронизацию
+//
+// Принципы агентно-ориентированного моделирования:
+// 1. АВТОНОМИЯ: Принимает решения на основе внутреннего состояния
+// 2. РЕАКТИВНОСТЬ: Реагирует на сообщения от других акторов
+// 3. ПРОАКТИВНОСТЬ: Инициирует периодические задачи
+// 4. СОЦИАЛЬНОСТЬ: Взаимодействует с множеством других акторов
+//
+actor MainController {
+    // ========================================================================
+    // СОСТОЯНИЕ АГЕНТА (AGENT STATE)
+    // ========================================================================
+    // Каждый агент имеет собственное состояние, которое определяет его поведение
+    // и реакции на внешние события
+    private boolean systemActive = false;        // Глобальное состояние системы
+    private int activeNodes = 0;                 // Количество активных узлов
+    private List<String> nodeStatus = new ArrayList<>(); // Статусы всех узлов
+    
+    // ========================================================================
+    // ВРЕМЕННЫЕ ПАРАМЕТРЫ (TIMING CONSTRAINTS)
+    // ========================================================================
+    // Timed Rebeca позволяет моделировать временные ограничения и дедлайны
+    private long systemStartTime;                // Время запуска системы
+    private long lastHeartbeatTime;              // Последний heartbeat
+    
+    // Константы времени для верификации временных свойств
+    private static final long HEARTBEAT_INTERVAL = 100; // 100ms - период heartbeat
+    private static final long NODE_TIMEOUT = 500;       // 500ms - таймаут узла
+    private static final long SYSTEM_INIT_TIMEOUT = 1000; // 1s - инициализация
+    
+    // ========================================================================
+    // ССЫЛКИ НА ДРУГИЕ АКТОРЫ (AGENT REFERENCES)
+    // ========================================================================
+    // Агенты взаимодействуют через ссылки, что обеспечивает слабую связанность
+    // и возможность динамического изменения топологии взаимодействий
+    private List<NodeController> nodes = new ArrayList<>(); // Подчиненные узлы
+    private SystemMonitor monitor;                          // Монитор системы
+    private DataCollector collector;                        // Сборщик данных
+    
+    // ========================================================================
+    // ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ (SYSTEM INITIALIZATION)
+    // ========================================================================
+    // Этот метод демонстрирует принцип СОЗДАНИЯ АГЕНТОВ (Agent Creation)
+    // и инициализации их взаимодействий
+    message init() {
+        systemStartTime = System.currentTimeMillis();
+        systemActive = true;
+        
+        // ====================================================================
+        // СОЗДАНИЕ ПОДЧИНЕННЫХ АГЕНТОВ (SLAVE AGENT CREATION)
+        // ====================================================================
+        // Реализует паттерн Master-Slave, где главный агент создает и
+        // инициализирует подчиненных агентов для распределения задач
+        for (int i = 0; i < 5; i++) {
+            NodeController node = new NodeController("Node-" + i);
+            nodes.add(node);
+            node.init();  // Асинхронная инициализация каждого узла
+        }
+        
+        // ====================================================================
+        // СОЗДАНИЕ ВСПОМОГАТЕЛЬНЫХ АГЕНТОВ (SUPPORT AGENT CREATION)
+        // ====================================================================
+        // Создание специализированных агентов для мониторинга и сбора данных
+        // демонстрирует принцип РАЗДЕЛЕНИЯ ОТВЕТСТВЕННОСТИ
+        monitor = new SystemMonitor();
+        collector = new DataCollector();
+        
+        monitor.init();
+        collector.init();
+        
+        // ====================================================================
+        // ЗАПУСК ПЕРИОДИЧЕСКИХ ЗАДАЧ (PERIODIC TASK INITIATION)
+        // ====================================================================
+        // Демонстрирует ПРОАКТИВНОСТЬ агента - способность инициировать
+        // действия без внешних стимулов
+        startHeartbeat();
+        startDataCollection();
+        
+        log("Система инициализирована успешно");
+    }
+    
+    // ========================================================================
+    // ПЕРИОДИЧЕСКАЯ ПРОВЕРКА СОСТОЯНИЯ УЗЛОВ (PERIODIC HEARTBEAT)
+    // ========================================================================
+    // Этот метод демонстрирует ключевые принципы Timed Rebeca:
+    // 1. ВРЕМЕННЫЕ ОГРАНИЧЕНИЯ - периодическое выполнение
+    // 2. АСИНХРОННОЕ ВЗАИМОДЕЙСТВИЕ - отправка сообщений всем узлам
+    // 3. САМОПЛАНИРОВАНИЕ - рекурсивный вызов с временной задержкой
+    message startHeartbeat() {
+        if (!systemActive) return;
+        
+        lastHeartbeatTime = System.currentTimeMillis();
+        
+        // ====================================================================
+        // РАССЫЛКА СООБЩЕНИЙ ВСЕМ АГЕНТАМ (BROADCAST MESSAGING)
+        // ====================================================================
+        // Демонстрирует принцип МАССОВОГО ВЗАИМОДЕЙСТВИЯ (Mass Interaction)
+        // где один агент взаимодействует с множеством других одновременно
+        for (NodeController node : nodes) {
+            node.heartbeat();  // Асинхронная отправка сообщения каждому узлу
+        }
+        
+        // ====================================================================
+        // ПРОВЕРКА ВРЕМЕННЫХ ОГРАНИЧЕНИЙ (TIMING CONSTRAINT CHECKING)
+        // ====================================================================
+        // Реализует принцип ВРЕМЕННОГО МОНИТОРИНГА (Temporal Monitoring)
+        // для обеспечения качества обслуживания и отказоустойчивости
+        checkNodeTimeouts();
+        
+        // ====================================================================
+        // САМОПЛАНИРОВАНИЕ С ВРЕМЕННОЙ ЗАДЕРЖКОЙ (SELF-SCHEDULING)
+        // ====================================================================
+        // Ключевая особенность Timed Rebeca: агент может планировать
+        // собственные будущие действия с указанием временной задержки
+        // "after HEARTBEAT_INTERVAL" - это временное ограничение
+        self.startHeartbeat() after HEARTBEAT_INTERVAL;
+    }
+    
+    // Проверка таймаутов узлов
+    private void checkNodeTimeouts() {
+        long currentTime = System.currentTimeMillis();
+        
+        for (int i = 0; i < nodes.size(); i++) {
+            NodeController node = nodes.get(i);
+            if (currentTime - node.getLastResponseTime() > NODE_TIMEOUT) {
+                log("Таймаут узла: " + node.getName());
+                node.reconnect();
+            }
+        }
+    }
+    
+    // Запуск сбора данных
+    message startDataCollection() {
+        if (!systemActive) return;
+        
+        collector.collectData(nodes);
+        
+        // Планирование следующего сбора
+        self.startDataCollection() after 200; // 200ms
+    }
+    
+    // Обработка статуса узла
+    message nodeStatusUpdate(String nodeName, String status, long timestamp) {
+        // Обновление статуса
+        for (int i = 0; i < nodes.size(); i++) {
+            if (nodes.get(i).getName().equals(nodeName)) {
+                nodeStatus.set(i, status);
+                nodes.get(i).updateLastResponseTime(timestamp);
+                break;
+            }
+        }
+        
+        // Уведомление монитора
+        monitor.updateNodeStatus(nodeName, status);
+        
+        log("Статус узла обновлен: " + nodeName + " -> " + status);
+    }
+    
+    // Обработка критических событий
+    message criticalEvent(String eventType, String description, long timestamp) {
+        log("КРИТИЧЕСКОЕ СОБЫТИЕ: " + eventType + " - " + description);
+        
+        // Уведомление монитора
+        monitor.handleCriticalEvent(eventType, description, timestamp);
+        
+        // Сбор данных о событии
+        collector.recordEvent(eventType, description, timestamp);
+        
+        // Принятие мер по устранению
+        handleCriticalEvent(eventType, description);
+    }
+    
+    // Обработка критических событий
+    private void handleCriticalEvent(String eventType, String description) {
+        switch (eventType) {
+            case "NODE_FAILURE":
+                // Перезапуск узла
+                break;
+            case "COMMUNICATION_ERROR":
+                // Перезапуск связи
+                break;
+            case "DATA_CORRUPTION":
+                // Восстановление данных
+                break;
+            default:
+                log("Неизвестный тип события: " + eventType);
+        }
+    }
+    
+    // Завершение работы системы
+    message shutdown() {
+        systemActive = false;
+        
+        // Остановка всех узлов
+        for (NodeController node : nodes) {
+            node.shutdown();
+        }
+        
+        // Остановка монитора и сборщика
+        monitor.shutdown();
+        collector.shutdown();
+        
+        log("Система завершена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[MainController] " + message);
+    }
+}
+
+// Актор узла управления
+actor NodeController {
+    private String name;
+    private String status = "INIT";
+    private long lastResponseTime;
+    private boolean active = false;
+    
+    // Временные параметры
+    private static final long RESPONSE_TIMEOUT = 50; // 50ms
+    private static final long RECONNECT_DELAY = 100; // 100ms
+    
+    // Конструктор
+    public NodeController(String nodeName) {
+        this.name = nodeName;
+        this.lastResponseTime = System.currentTimeMillis();
+    }
+    
+    // Инициализация узла
+    message init() {
+        status = "INITIALIZING";
+        active = true;
+        
+        // Имитация инициализации
+        self.initializationComplete() after 50;
+        
+        log("Узел инициализируется");
+    }
+    
+    // Завершение инициализации
+    message initializationComplete() {
+        status = "READY";
+        lastResponseTime = System.currentTimeMillis();
+        
+        log("Узел готов к работе");
+    }
+    
+    // Обработка heartbeat
+    message heartbeat() {
+        if (!active) return;
+        
+        // Отправка ответа
+        mainController.nodeStatusUpdate(name, status, System.currentTimeMillis());
+        
+        // Обновление времени последнего ответа
+        lastResponseTime = System.currentTimeMillis();
+    }
+    
+    // Переподключение узла
+    message reconnect() {
+        if (!active) return;
+        
+        status = "RECONNECTING";
+        log("Попытка переподключения");
+        
+        // Имитация переподключения
+        self.reconnectionComplete() after RECONNECT_DELAY;
+    }
+    
+    // Завершение переподключения
+    message reconnectionComplete() {
+        status = "READY";
+        lastResponseTime = System.currentTimeMillis();
+        
+        log("Узел переподключен");
+    }
+    
+    // Обновление времени последнего ответа
+    message updateLastResponseTime(long timestamp) {
+        this.lastResponseTime = timestamp;
+    }
+    
+    // Завершение работы узла
+    message shutdown() {
+        active = false;
+        status = "SHUTDOWN";
+        
+        log("Узел завершен");
+    }
+    
+    // Геттеры
+    public String getName() { return name; }
+    public long getLastResponseTime() { return lastResponseTime; }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Актор мониторинга системы
+actor SystemMonitor {
+    private boolean active = false;
+    private Map<String, String> nodeStatuses = new HashMap<>();
+    private List<String> criticalEvents = new ArrayList<>();
+    
+    // Временные параметры
+    private static final long STATUS_CHECK_INTERVAL = 150; // 150ms
+    
+    // Инициализация монитора
+    message init() {
+        active = true;
+        startMonitoring();
+        
+        log("Монитор системы запущен");
+    }
+    
+    // Запуск мониторинга
+    message startMonitoring() {
+        if (!active) return;
+        
+        // Проверка состояния системы
+        checkSystemHealth();
+        
+        // Планирование следующей проверки
+        self.startMonitoring() after STATUS_CHECK_INTERVAL;
+    }
+    
+    // Проверка здоровья системы
+    private void checkSystemHealth() {
+        int readyNodes = 0;
+        int failedNodes = 0;
+        
+        for (String status : nodeStatuses.values()) {
+            if ("READY".equals(status)) {
+                readyNodes++;
+            } else if ("FAILED".equals(status)) {
+                failedNodes++;
+            }
+        }
+        
+        // Анализ состояния
+        if (failedNodes > 0) {
+            log("ВНИМАНИЕ: " + failedNodes + " узлов в состоянии отказа");
+        }
+        
+        if (readyNodes < 3) {
+            log("КРИТИЧНО: Недостаточно активных узлов");
+        }
+    }
+    
+    // Обновление статуса узла
+    message updateNodeStatus(String nodeName, String status) {
+        nodeStatuses.put(nodeName, status);
+        
+        // Проверка критических изменений
+        if ("FAILED".equals(status)) {
+            log("КРИТИЧНО: Узел " + nodeName + " вышел из строя");
+        }
+    }
+    
+    // Обработка критических событий
+    message handleCriticalEvent(String eventType, String description, long timestamp) {
+        String event = timestamp + ": " + eventType + " - " + description;
+        criticalEvents.add(event);
+        
+        // Ограничение размера списка событий
+        if (criticalEvents.size() > 100) {
+            criticalEvents.remove(0);
+        }
+        
+        log("Критическое событие зарегистрировано: " + eventType);
+    }
+    
+    // Завершение работы монитора
+    message shutdown() {
+        active = false;
+        
+        log("Монитор системы остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[SystemMonitor] " + message);
+    }
+}
+
+// Актор сбора данных
+actor DataCollector {
+    private boolean active = false;
+    private List<DataPoint> dataPoints = new ArrayList<>();
+    private long collectionStartTime;
+    
+    // Структура данных
+    private static class DataPoint {
+        long timestamp;
+        String nodeName;
+        String metric;
+        double value;
+        
+        DataPoint(long timestamp, String nodeName, String metric, double value) {
+            this.timestamp = timestamp;
+            this.nodeName = nodeName;
+            this.metric = metric;
+            this.value = value;
+        }
+    }
+    
+    // Инициализация сборщика
+    message init() {
+        active = true;
+        collectionStartTime = System.currentTimeMillis();
+        
+        log("Сборщик данных запущен");
+    }
+    
+    // Сбор данных с узлов
+    message collectData(List<NodeController> nodes) {
+        if (!active) return;
+        
+        long currentTime = System.currentTimeMillis();
+        
+        // Сбор метрик с каждого узла
+        for (NodeController node : nodes) {
+            // Имитация сбора метрик
+            double cpuUsage = Math.random() * 100;
+            double memoryUsage = Math.random() * 100;
+            double responseTime = Math.random() * 50;
+            
+            // Сохранение данных
+            dataPoints.add(new DataPoint(currentTime, node.getName(), "CPU", cpuUsage));
+            dataPoints.add(new DataPoint(currentTime, node.getName(), "Memory", memoryUsage));
+            dataPoints.add(new DataPoint(currentTime, node.getName(), "ResponseTime", responseTime));
+        }
+        
+        // Ограничение размера данных
+        if (dataPoints.size() > 1000) {
+            dataPoints = dataPoints.subList(dataPoints.size() - 500, dataPoints.size());
+        }
+        
+        log("Собрано " + nodes.size() * 3 + " метрик");
+    }
+    
+    // Запись события
+    message recordEvent(String eventType, String description, long timestamp) {
+        if (!active) return;
+        
+        // Сохранение события как метрики
+        dataPoints.add(new DataPoint(timestamp, "SYSTEM", eventType, 1.0));
+        
+        log("Событие записано: " + eventType);
+    }
+    
+    // Получение статистики
+    message getStatistics() {
+        if (!active) return;
+        
+        // Расчет статистики
+        double avgCPU = dataPoints.stream()
+            .filter(dp -> "CPU".equals(dp.metric))
+            .mapToDouble(dp -> dp.value)
+            .average()
+            .orElse(0.0);
+            
+        double avgMemory = dataPoints.stream()
+            .filter(dp -> "Memory".equals(dp.metric))
+            .mapToDouble(dp -> dp.value)
+            .average()
+            .orElse(0.0);
+            
+        log("Статистика - CPU: " + String.format("%.2f", avgCPU) + 
+            "%, Memory: " + String.format("%.2f", avgMemory) + "%");
+    }
+    
+    // Завершение работы сборщика
+    message shutdown() {
+        active = false;
+        
+        log("Сборщик данных остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[DataCollector] " + message);
+    }
+}
+
+// Главная функция для запуска
+actor Main {
+    message start() {
+        // Создание главного контроллера
+        MainController controller = new MainController();
+        
+        // Запуск системы
+        controller.init();
+        
+        log("Система запущена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[Main] " + message);
+    }
+}

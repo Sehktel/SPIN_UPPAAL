@@ -160,3 +160,5 @@ MainSystem = System;
 
 -- Спецификация восстановления: ошибки должны приводить к восстановлению
 #assert MainSystem [F error] W [F retry];
+
+

@@ -1,0 +1,349 @@
+(* CADP модель Modbus TCP протокола на LOTOS *)
+(* Демонстрирует возможности CADP для промышленных протоколов *)
+(* Автор: Senior Developer *)
+(* Дата: 2024-12-19 *)
+(*
+  Проблема: SPIN/UPPAAL не специализированы для протоколов связи
+  Решение: CADP специализирован для LOTOS и протоколов связи
+*)
+
+specification ModbusTCP [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                         WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                         WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                         EXCEPTION_RESPONSE, SUCCESS_RESPONSE] : exit behaviour
+
+(* Типы данных для Modbus *)
+type ModbusAddress is
+  naturals
+endtype
+
+type ModbusQuantity is
+  naturals
+endtype
+
+type ModbusData is
+  naturals
+endtype
+
+type ModbusTransactionId is
+  naturals
+endtype
+
+type ModbusFunctionCode is
+  sorts FunctionCode
+  constructors
+    READ_COILS : -> FunctionCode
+    READ_DISCRETE : -> FunctionCode
+    READ_HOLDING : -> FunctionCode
+    READ_INPUT : -> FunctionCode
+    WRITE_SINGLE_COIL : -> FunctionCode
+    WRITE_SINGLE_REGISTER : -> FunctionCode
+    WRITE_MULTIPLE_COILS : -> FunctionCode
+    WRITE_MULTIPLE_REGISTERS : -> FunctionCode
+endtype
+
+type ModbusResponse is
+  sorts Response
+  constructors
+    SUCCESS_RESPONSE : ModbusData -> Response
+    EXCEPTION_RESPONSE : ModbusData -> Response
+endtype
+
+(* Процесс Modbus TCP клиента *)
+process ModbusClient [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                      WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                      WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                      EXCEPTION_RESPONSE, SUCCESS_RESPONSE] : exit behaviour
+  var
+    transaction_id : ModbusTransactionId
+    function_code : ModbusFunctionCode
+    address : ModbusAddress
+    quantity : ModbusQuantity
+    data : ModbusData
+  in
+    (* Инициализация *)
+    transaction_id := 0;
+    
+    (* Основной цикл клиента *)
+    loop
+      (* Выбор функции *)
+      choice
+        (* Чтение катушек *)
+        READ_COIL ! transaction_id ! READ_COILS ! address ! quantity;
+        transaction_id := transaction_id + 1;
+        
+        (* Ожидание ответа *)
+        choice
+          SUCCESS_RESPONSE ? data;
+          (* Обработка успешного ответа *)
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          (* Обработка исключения *)
+          skip
+        endchoice
+        
+      []
+        (* Чтение дискретных входов *)
+        READ_DISCRETE ! transaction_id ! READ_DISCRETE ! address ! quantity;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Чтение holding регистров *)
+        READ_HOLDING ! transaction_id ! READ_HOLDING ! address ! quantity;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Чтение input регистров *)
+        READ_INPUT ! transaction_id ! READ_INPUT ! address ! quantity;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Запись одной катушки *)
+        WRITE_SINGLE_COIL ! transaction_id ! WRITE_SINGLE_COIL ! address ! data;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Запись одного регистра *)
+        WRITE_SINGLE_REGISTER ! transaction_id ! WRITE_SINGLE_REGISTER ! address ! data;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Запись множественных катушек *)
+        WRITE_MULTIPLE_COILS ! transaction_id ! WRITE_MULTIPLE_COILS ! address ! quantity ! data;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      []
+        (* Запись множественных регистров *)
+        WRITE_MULTIPLE_REGISTERS ! transaction_id ! WRITE_MULTIPLE_REGISTERS ! address ! quantity ! data;
+        transaction_id := transaction_id + 1;
+        
+        choice
+          SUCCESS_RESPONSE ? data;
+          skip
+        []
+          EXCEPTION_RESPONSE ? data;
+          skip
+        endchoice
+        
+      endchoice
+    endloop
+  endvar
+endproc
+
+(* Процесс Modbus TCP сервера *)
+process ModbusServer [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                      WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                      WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                      EXCEPTION_RESPONSE, SUCCESS_RESPONSE] : exit behaviour
+  var
+    transaction_id : ModbusTransactionId
+    function_code : ModbusFunctionCode
+    address : ModbusAddress
+    quantity : ModbusQuantity
+    data : ModbusData
+    response_data : ModbusData
+  in
+    (* Основной цикл сервера *)
+    loop
+      (* Обработка запросов *)
+      choice
+        (* Обработка чтения катушек *)
+        READ_COIL ? transaction_id ? function_code ? address ? quantity;
+        
+        (* Проверка валидности адреса *)
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 2000 then
+          (* Успешный ответ *)
+          response_data := 0; (* Данные катушек *)
+          SUCCESS_RESPONSE ! response_data
+        else
+          (* Исключение - неверный адрес *)
+          response_data := 2; (* Код исключения *)
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка чтения дискретных входов *)
+        READ_DISCRETE ? transaction_id ? function_code ? address ? quantity;
+        
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 2000 then
+          response_data := 0;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 2;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка чтения holding регистров *)
+        READ_HOLDING ? transaction_id ? function_code ? address ? quantity;
+        
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 125 then
+          response_data := 0;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 2;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка чтения input регистров *)
+        READ_INPUT ? transaction_id ? function_code ? address ? quantity;
+        
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 125 then
+          response_data := 0;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 2;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка записи одной катушки *)
+        WRITE_SINGLE_COIL ? transaction_id ? function_code ? address ? data;
+        
+        if address >= 0 and address <= 65535 and (data = 0 or data = 1) then
+          (* Запись в память *)
+          response_data := data;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 3; (* Код исключения - неверные данные *)
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка записи одного регистра *)
+        WRITE_SINGLE_REGISTER ? transaction_id ? function_code ? address ? data;
+        
+        if address >= 0 and address <= 65535 and data >= 0 and data <= 65535 then
+          (* Запись в память *)
+          response_data := data;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 3;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка записи множественных катушек *)
+        WRITE_MULTIPLE_COILS ? transaction_id ? function_code ? address ? quantity ? data;
+        
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 1968 then
+          (* Запись в память *)
+          response_data := quantity;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 3;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      []
+        (* Обработка записи множественных регистров *)
+        WRITE_MULTIPLE_REGISTERS ? transaction_id ? function_code ? address ? quantity ? data;
+        
+        if address >= 0 and address <= 65535 and quantity > 0 and quantity <= 120 then
+          (* Запись в память *)
+          response_data := quantity;
+          SUCCESS_RESPONSE ! response_data
+        else
+          response_data := 3;
+          EXCEPTION_RESPONSE ! response_data
+        endif
+        
+      endchoice
+    endloop
+  endvar
+endproc
+
+(* Основная система Modbus TCP *)
+process ModbusTCPSystem [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                         WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                         WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                         EXCEPTION_RESPONSE, SUCCESS_RESPONSE] : exit behaviour
+  hide READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+       WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+       WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+       EXCEPTION_RESPONSE, SUCCESS_RESPONSE
+  in
+    ModbusClient [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                  WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                  WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                  EXCEPTION_RESPONSE, SUCCESS_RESPONSE]
+    |[READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+       WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+       WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+       EXCEPTION_RESPONSE, SUCCESS_RESPONSE]|
+    ModbusServer [READ_COIL, READ_DISCRETE, READ_HOLDING, READ_INPUT,
+                  WRITE_SINGLE_COIL, WRITE_SINGLE_REGISTER,
+                  WRITE_MULTIPLE_COILS, WRITE_MULTIPLE_REGISTERS,
+                  EXCEPTION_RESPONSE, SUCCESS_RESPONSE]
+  endhide
+endproc
+
+(* Свойства для верификации *)
+(* Безопасность: сервер всегда отвечает на валидные запросы *)
+property SafetyProperty : bool :=
+  forall (tid : ModbusTransactionId, fc : ModbusFunctionCode, addr : ModbusAddress, qty : ModbusQuantity)
+  (addr >= 0 and addr <= 65535 and qty > 0) implies
+  eventually (SUCCESS_RESPONSE or EXCEPTION_RESPONSE)
+
+(* Живость: клиент всегда может отправить запрос *)
+property LivenessProperty : bool :=
+  always (eventually READ_COIL or READ_DISCRETE or READ_HOLDING or READ_INPUT or
+          WRITE_SINGLE_COIL or WRITE_SINGLE_REGISTER or
+          WRITE_MULTIPLE_COILS or WRITE_MULTIPLE_REGISTERS)
+
+(* Отсутствие тупиков *)
+property NoDeadlockProperty : bool :=
+  not deadlock
+
+endspec
+

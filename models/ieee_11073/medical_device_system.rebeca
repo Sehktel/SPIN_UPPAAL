@@ -1,0 +1,1007 @@
+// Medical Device System Model based on IEEE 11073
+// Модель системы медицинских устройств на основе стандарта IEEE 11073
+// Автор: Senior Developer
+// Дата: 2024-12-19
+
+// Импорты
+import java.util.*;
+import java.time.*;
+
+// Главный актор системы медицинских устройств
+actor MedicalSystemController {
+    // Состояние системы
+    private SystemStatus status = SystemStatus.INITIALIZING;
+    private Map<String, MedicalDevice> devices = new HashMap<>();
+    private Map<String, Patient> patients = new HashMap<>();
+    private Map<String, Alert> activeAlerts = new HashMap<>();
+    
+    // Временные параметры IEEE 11073
+    private static final long DEVICE_TIMEOUT = 5000; // 5s для медицинских устройств
+    private static final long DATA_COLLECTION_INTERVAL = 1000; // 1s для сбора данных
+    private static final long ALERT_CHECK_INTERVAL = 500; // 500ms для проверки тревог
+    
+    // Ссылки на компоненты
+    private DataManager dataManager;
+    private AlertManager alertManager;
+    private SecurityManager securityManager;
+    private CommunicationManager commManager;
+    
+    // Инициализация системы
+    message init() {
+        log("Инициализация системы медицинских устройств IEEE 11073");
+        
+        // Создание медицинских устройств
+        createMedicalDevices();
+        
+        // Создание пациентов
+        createPatients();
+        
+        // Создание систем управления
+        dataManager = new DataManager();
+        alertManager = new AlertManager();
+        securityManager = new SecurityManager();
+        commManager = new CommunicationManager();
+        
+        // Инициализация компонентов
+        dataManager.init();
+        alertManager.init();
+        securityManager.init();
+        commManager.init();
+        
+        // Запуск мониторинга
+        startMonitoring();
+        
+        status = SystemStatus.OPERATIONAL;
+        log("Система готова к работе");
+    }
+    
+    // Создание медицинских устройств
+    private void createMedicalDevices() {
+        String[] deviceNames = {
+            "Ventilator_ICU1", "Ventilator_ICU2", "ECG_Monitor_1", "ECG_Monitor_2",
+            "BloodPressure_1", "BloodPressure_2", "PulseOximeter_1", "PulseOximeter_2",
+            "InfusionPump_1", "InfusionPump_2", "Defibrillator_1", "Defibrillator_2"
+        };
+        
+        for (String name : deviceNames) {
+            MedicalDevice device = new MedicalDevice(name, getDeviceType(name));
+            devices.put(name, device);
+            device.init();
+        }
+    }
+    
+    // Определение типа устройства
+    private DeviceType getDeviceType(String deviceName) {
+        if (deviceName.contains("Ventilator")) return DeviceType.VENTILATOR;
+        if (deviceName.contains("ECG")) return DeviceType.ECG_MONITOR;
+        if (deviceName.contains("BloodPressure")) return DeviceType.BLOOD_PRESSURE;
+        if (deviceName.contains("PulseOximeter")) return DeviceType.PULSE_OXIMETER;
+        if (deviceName.contains("InfusionPump")) return DeviceType.INFUSION_PUMP;
+        if (deviceName.contains("Defibrillator")) return DeviceType.DEFIBRILLATOR;
+        return DeviceType.UNKNOWN;
+    }
+    
+    // Создание пациентов
+    private void createPatients() {
+        String[] patientNames = {"Patient_001", "Patient_002", "Patient_003", "Patient_004"};
+        
+        for (String name : patientNames) {
+            Patient patient = new Patient(name);
+            patients.put(name, patient);
+            patient.init();
+        }
+    }
+    
+    // Запуск мониторинга
+    message startMonitoring() {
+        if (status != SystemStatus.OPERATIONAL) return;
+        
+        // Проверка состояния всех устройств
+        checkSystemHealth();
+        
+        // Планирование следующей проверки
+        self.startMonitoring() after DATA_COLLECTION_INTERVAL;
+    }
+    
+    // Проверка здоровья системы
+    private void checkSystemHealth() {
+        int operationalDevices = 0;
+        int criticalAlerts = 0;
+        
+        // Проверка устройств
+        for (MedicalDevice device : devices.values()) {
+            if (device.getStatus() == DeviceStatus.OPERATIONAL) {
+                operationalDevices++;
+            }
+        }
+        
+        // Проверка тревог
+        for (Alert alert : activeAlerts.values()) {
+            if (alert.getSeverity() == AlertSeverity.CRITICAL) {
+                criticalAlerts++;
+            }
+        }
+        
+        // Анализ состояния
+        if (operationalDevices < 8) {
+            log("ВНИМАНИЕ: Недостаточно операционных устройств");
+            alertManager.activateBackupMode();
+        }
+        
+        if (criticalAlerts > 0) {
+            log("КРИТИЧНО: " + criticalAlerts + " критических тревог");
+            securityManager.activateEmergencyProtocol();
+        }
+        
+        log("Статус: Устройства=" + operationalDevices + "/12, Критические тревоги=" + criticalAlerts);
+    }
+    
+    // Обработка данных от устройств
+    message deviceData(String deviceName, Map<String, Object> data, long timestamp) {
+        if (!devices.containsKey(deviceName)) {
+            log("Неизвестное устройство: " + deviceName);
+            return;
+        }
+        
+        // Проверка безопасности данных
+        if (!securityManager.validateData(deviceName, data)) {
+            log("ОШИБКА: Данные не прошли проверку безопасности от " + deviceName);
+            return;
+        }
+        
+        // Передача данных в менеджер данных
+        dataManager.processDeviceData(deviceName, data, timestamp);
+        
+        // Проверка на тревоги
+        checkForAlerts(deviceName, data);
+        
+        log("Данные получены от " + deviceName + ": " + data.size() + " параметров");
+    }
+    
+    // Проверка на тревоги
+    private void checkForAlerts(String deviceName, Map<String, Object> data) {
+        MedicalDevice device = devices.get(deviceName);
+        DeviceType deviceType = device.getDeviceType();
+        
+        // Проверка критических значений в зависимости от типа устройства
+        switch (deviceType) {
+            case VENTILATOR:
+                checkVentilatorAlerts(deviceName, data);
+                break;
+            case ECG_MONITOR:
+                checkECGAlerts(deviceName, data);
+                break;
+            case BLOOD_PRESSURE:
+                checkBloodPressureAlerts(deviceName, data);
+                break;
+            case PULSE_OXIMETER:
+                checkPulseOximeterAlerts(deviceName, data);
+                break;
+            case INFUSION_PUMP:
+                checkInfusionPumpAlerts(deviceName, data);
+                break;
+            case DEFIBRILLATOR:
+                checkDefibrillatorAlerts(deviceName, data);
+                break;
+        }
+    }
+    
+    // Проверка тревог вентилятора
+    private void checkVentilatorAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("TidalVolume")) {
+            double tidalVolume = (Double) data.get("TidalVolume");
+            if (tidalVolume < 200.0 || tidalVolume > 800.0) {
+                createAlert(deviceName, "TIDAL_VOLUME_OUT_OF_RANGE", 
+                           "Tidal volume: " + tidalVolume + " ml", AlertSeverity.HIGH);
+            }
+        }
+        
+        if (data.containsKey("RespiratoryRate")) {
+            double respRate = (Double) data.get("RespiratoryRate");
+            if (respRate < 8.0 || respRate > 35.0) {
+                createAlert(deviceName, "RESPIRATORY_RATE_ABNORMAL", 
+                           "Respiratory rate: " + respRate + " bpm", AlertSeverity.CRITICAL);
+            }
+        }
+    }
+    
+    // Проверка тревог ЭКГ монитора
+    private void checkECGAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("HeartRate")) {
+            double heartRate = (Double) data.get("HeartRate");
+            if (heartRate < 40.0 || heartRate > 150.0) {
+                createAlert(deviceName, "HEART_RATE_ABNORMAL", 
+                           "Heart rate: " + heartRate + " bpm", AlertSeverity.CRITICAL);
+            }
+        }
+        
+        if (data.containsKey("Arrhythmia")) {
+            boolean arrhythmia = (Boolean) data.get("Arrhythmia");
+            if (arrhythmia) {
+                createAlert(deviceName, "ARRHYTHMIA_DETECTED", 
+                           "Arrhythmia detected", AlertSeverity.CRITICAL);
+            }
+        }
+    }
+    
+    // Проверка тревог тонометра
+    private void checkBloodPressureAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("SystolicPressure")) {
+            double systolic = (Double) data.get("SystolicPressure");
+            if (systolic < 80.0 || systolic > 200.0) {
+                createAlert(deviceName, "SYSTOLIC_PRESSURE_ABNORMAL", 
+                           "Systolic pressure: " + systolic + " mmHg", AlertSeverity.HIGH);
+            }
+        }
+        
+        if (data.containsKey("DiastolicPressure")) {
+            double diastolic = (Double) data.get("DiastolicPressure");
+            if (diastolic < 50.0 || diastolic > 120.0) {
+                createAlert(deviceName, "DIASTOLIC_PRESSURE_ABNORMAL", 
+                           "Diastolic pressure: " + diastolic + " mmHg", AlertSeverity.HIGH);
+            }
+        }
+    }
+    
+    // Проверка тревог пульсоксиметра
+    private void checkPulseOximeterAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("SpO2")) {
+            double spo2 = (Double) data.get("SpO2");
+            if (spo2 < 90.0) {
+                createAlert(deviceName, "SPO2_LOW", 
+                           "SpO2: " + spo2 + "%", AlertSeverity.CRITICAL);
+            }
+        }
+    }
+    
+    // Проверка тревог инфузионного насоса
+    private void checkInfusionPumpAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("FlowRate")) {
+            double flowRate = (Double) data.get("FlowRate");
+            if (flowRate <= 0.0) {
+                createAlert(deviceName, "INFUSION_STOPPED", 
+                           "Infusion stopped", AlertSeverity.HIGH);
+            }
+        }
+        
+        if (data.containsKey("AirInLine")) {
+            boolean airInLine = (Boolean) data.get("AirInLine");
+            if (airInLine) {
+                createAlert(deviceName, "AIR_IN_LINE", 
+                           "Air detected in infusion line", AlertSeverity.CRITICAL);
+            }
+        }
+    }
+    
+    // Проверка тревог дефибриллятора
+    private void checkDefibrillatorAlerts(String deviceName, Map<String, Object> data) {
+        if (data.containsKey("BatteryLevel")) {
+            double batteryLevel = (Double) data.get("BatteryLevel");
+            if (batteryLevel < 20.0) {
+                createAlert(deviceName, "LOW_BATTERY", 
+                           "Battery level: " + batteryLevel + "%", AlertSeverity.HIGH);
+            }
+        }
+    }
+    
+    // Создание тревоги
+    private void createAlert(String deviceName, String alertType, String description, AlertSeverity severity) {
+        String alertId = deviceName + "_" + System.currentTimeMillis();
+        Alert alert = new Alert(alertId, deviceName, alertType, description, severity);
+        
+        activeAlerts.put(alertId, alert);
+        alertManager.processAlert(alert);
+        
+        log("ТРЕВОГА: " + alertType + " от " + deviceName + " - " + description);
+    }
+    
+    // Обработка команд управления
+    message controlCommand(String deviceName, String command, Map<String, Object> parameters, long timestamp) {
+        if (!devices.containsKey(deviceName)) {
+            log("Неизвестное устройство: " + deviceName);
+            return;
+        }
+        
+        // Проверка авторизации
+        if (!securityManager.authorizeCommand(deviceName, command)) {
+            log("ОШИБКА: Команда не авторизована для " + deviceName);
+            return;
+        }
+        
+        // Выполнение команды
+        devices.get(deviceName).executeCommand(command, parameters);
+        
+        // Логирование команды
+        dataManager.logCommand(deviceName, command, parameters, timestamp);
+        
+        log("Команда выполнена: " + deviceName + " -> " + command);
+    }
+    
+    // Завершение работы системы
+    message shutdown() {
+        status = SystemStatus.SHUTDOWN;
+        
+        // Остановка всех устройств
+        for (MedicalDevice device : devices.values()) {
+            device.shutdown();
+        }
+        
+        // Остановка всех пациентов
+        for (Patient patient : patients.values()) {
+            patient.shutdown();
+        }
+        
+        dataManager.shutdown();
+        alertManager.shutdown();
+        securityManager.shutdown();
+        commManager.shutdown();
+        
+        log("Система остановлена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[MedicalSystemController] " + message);
+    }
+}
+
+// Перечисления статусов и типов
+enum SystemStatus { INITIALIZING, OPERATIONAL, MAINTENANCE, SHUTDOWN }
+enum DeviceStatus { INITIALIZING, OPERATIONAL, ERROR, MAINTENANCE, CALIBRATION }
+enum DeviceType { VENTILATOR, ECG_MONITOR, BLOOD_PRESSURE, PULSE_OXIMETER, INFUSION_PUMP, DEFIBRILLATOR, UNKNOWN }
+enum AlertSeverity { LOW, MEDIUM, HIGH, CRITICAL }
+
+// Медицинское устройство
+actor MedicalDevice {
+    private String name;
+    private DeviceType deviceType;
+    private DeviceStatus status = DeviceStatus.INITIALIZING;
+    private Map<String, Object> currentData = new HashMap<>();
+    private Map<String, Object> configuration = new HashMap<>();
+    
+    // Временные параметры
+    private static final long DATA_INTERVAL = 1000; // 1s для медицинских данных
+    private static final long COMMAND_TIMEOUT = 200; // 200ms для команд
+    
+    // Конструктор
+    public MedicalDevice(String deviceName, DeviceType type) {
+        this.name = deviceName;
+        this.deviceType = type;
+    }
+    
+    // Инициализация устройства
+    message init() {
+        status = DeviceStatus.INITIALIZING;
+        
+        // Настройка конфигурации в зависимости от типа устройства
+        setupConfiguration();
+        
+        // Имитация инициализации
+        self.initializationComplete() after 200;
+        
+        log("Устройство инициализируется");
+    }
+    
+    // Настройка конфигурации
+    private void setupConfiguration() {
+        switch (deviceType) {
+            case VENTILATOR:
+                configuration.put("TidalVolume", 500.0);
+                configuration.put("RespiratoryRate", 12.0);
+                configuration.put("PEEP", 5.0);
+                break;
+            case ECG_MONITOR:
+                configuration.put("HeartRate", 72.0);
+                configuration.put("LeadCount", 12);
+                configuration.put("SamplingRate", 500.0);
+                break;
+            case BLOOD_PRESSURE:
+                configuration.put("MeasurementInterval", 300000.0); // 5 минут
+                configuration.put("AutoMode", true);
+                break;
+            case PULSE_OXIMETER:
+                configuration.put("AlarmThreshold", 90.0);
+                configuration.put("ContinuousMode", true);
+                break;
+            case INFUSION_PUMP:
+                configuration.put("FlowRate", 100.0);
+                configuration.put("VolumeToInfuse", 1000.0);
+                break;
+            case DEFIBRILLATOR:
+                configuration.put("EnergyLevel", 200.0);
+                configuration.put("SyncMode", false);
+                break;
+        }
+    }
+    
+    // Завершение инициализации
+    message initializationComplete() {
+        status = DeviceStatus.OPERATIONAL;
+        
+        // Запуск сбора данных
+        startDataCollection();
+        
+        log("Устройство готово к работе");
+    }
+    
+    // Запуск сбора данных
+    message startDataCollection() {
+        if (status != DeviceStatus.OPERATIONAL) return;
+        
+        // Сбор данных в зависимости от типа устройства
+        collectDeviceData();
+        
+        // Планирование следующего сбора
+        self.startDataCollection() after DATA_INTERVAL;
+    }
+    
+    // Сбор данных устройства
+    private void collectDeviceData() {
+        switch (deviceType) {
+            case VENTILATOR:
+                collectVentilatorData();
+                break;
+            case ECG_MONITOR:
+                collectECGData();
+                break;
+            case BLOOD_PRESSURE:
+                collectBloodPressureData();
+                break;
+            case PULSE_OXIMETER:
+                collectPulseOximeterData();
+                break;
+            case INFUSION_PUMP:
+                collectInfusionPumpData();
+                break;
+            case DEFIBRILLATOR:
+                collectDefibrillatorData();
+                break;
+        }
+        
+        // Отправка данных в контроллер
+        mainController.deviceData(name, currentData, System.currentTimeMillis());
+    }
+    
+    // Сбор данных вентилятора
+    private void collectVentilatorData() {
+        double tidalVolume = (Double) configuration.get("TidalVolume") + (Math.random() - 0.5) * 50.0;
+        double respiratoryRate = (Double) configuration.get("RespiratoryRate") + (Math.random() - 0.5) * 2.0;
+        double peep = (Double) configuration.get("PEEP") + (Math.random() - 0.5) * 1.0;
+        
+        currentData.put("TidalVolume", tidalVolume);
+        currentData.put("RespiratoryRate", respiratoryRate);
+        currentData.put("PEEP", peep);
+        currentData.put("InspiratoryTime", 1.0 + Math.random() * 0.5);
+        currentData.put("ExpiratoryTime", 1.5 + Math.random() * 0.5);
+    }
+    
+    // Сбор данных ЭКГ
+    private void collectECGData() {
+        double heartRate = (Double) configuration.get("HeartRate") + (Math.random() - 0.5) * 10.0;
+        boolean arrhythmia = Math.random() < 0.05; // 5% вероятность аритмии
+        
+        currentData.put("HeartRate", heartRate);
+        currentData.put("Arrhythmia", arrhythmia);
+        currentData.put("QRSDuration", 80.0 + Math.random() * 20.0);
+        currentData.put("STSegment", -0.1 + Math.random() * 0.2);
+    }
+    
+    // Сбор данных тонометра
+    private void collectBloodPressureData() {
+        double systolic = 120.0 + (Math.random() - 0.5) * 40.0;
+        double diastolic = 80.0 + (Math.random() - 0.5) * 20.0;
+        double meanPressure = diastolic + (systolic - diastolic) / 3.0;
+        
+        currentData.put("SystolicPressure", systolic);
+        currentData.put("DiastolicPressure", diastolic);
+        currentData.put("MeanPressure", meanPressure);
+        currentData.put("PulseRate", 72.0 + (Math.random() - 0.5) * 10.0);
+    }
+    
+    // Сбор данных пульсоксиметра
+    private void collectPulseOximeterData() {
+        double spo2 = 95.0 + (Math.random() - 0.5) * 10.0;
+        double pulseRate = 72.0 + (Math.random() - 0.5) * 10.0;
+        
+        currentData.put("SpO2", spo2);
+        currentData.put("PulseRate", pulseRate);
+        currentData.put("PerfusionIndex", 0.5 + Math.random() * 0.5);
+    }
+    
+    // Сбор данных инфузионного насоса
+    private void collectInfusionPumpData() {
+        double flowRate = (Double) configuration.get("FlowRate") + (Math.random() - 0.5) * 10.0;
+        double volumeInfused = Math.random() * 100.0;
+        boolean airInLine = Math.random() < 0.01; // 1% вероятность воздуха в линии
+        
+        currentData.put("FlowRate", flowRate);
+        currentData.put("VolumeInfused", volumeInfused);
+        currentData.put("AirInLine", airInLine);
+        currentData.put("Occlusion", false);
+    }
+    
+    // Сбор данных дефибриллятора
+    private void collectDefibrillatorData() {
+        double batteryLevel = 80.0 + Math.random() * 20.0;
+        boolean ready = batteryLevel > 20.0;
+        
+        currentData.put("BatteryLevel", batteryLevel);
+        currentData.put("Ready", ready);
+        currentData.put("EnergyLevel", (Double) configuration.get("EnergyLevel"));
+        currentData.put("SyncMode", (Boolean) configuration.get("SyncMode"));
+    }
+    
+    // Выполнение команды
+    message executeCommand(String command, Map<String, Object> parameters) {
+        if (status != DeviceStatus.OPERATIONAL) {
+            log("Устройство не готово к выполнению команд");
+            return;
+        }
+        
+        log("Выполнение команды: " + command);
+        
+        // Обработка команды в зависимости от типа устройства
+        boolean success = processCommand(command, parameters);
+        
+        if (success) {
+            // Имитация выполнения команды
+            self.commandComplete(command, success) after COMMAND_TIMEOUT;
+        } else {
+            log("Ошибка выполнения команды: " + command);
+        }
+    }
+    
+    // Обработка команды
+    private boolean processCommand(String command, Map<String, Object> parameters) {
+        switch (command) {
+            case "SET_CONFIGURATION":
+                return updateConfiguration(parameters);
+            case "START_MEASUREMENT":
+                return startMeasurement();
+            case "STOP_MEASUREMENT":
+                return stopMeasurement();
+            case "CALIBRATE":
+                return calibrate();
+            case "EMERGENCY_STOP":
+                return emergencyStop();
+            default:
+                log("Неизвестная команда: " + command);
+                return false;
+        }
+    }
+    
+    // Обновление конфигурации
+    private boolean updateConfiguration(Map<String, Object> newConfig) {
+        try {
+            configuration.putAll(newConfig);
+            log("Конфигурация обновлена");
+            return true;
+        } catch (Exception e) {
+            log("Ошибка обновления конфигурации: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    // Запуск измерения
+    private boolean startMeasurement() {
+        if (status == DeviceStatus.OPERATIONAL) {
+            log("Измерение запущено");
+            return true;
+        }
+        return false;
+    }
+    
+    // Остановка измерения
+    private boolean stopMeasurement() {
+        log("Измерение остановлено");
+        return true;
+    }
+    
+    // Калибровка
+    private boolean calibrate() {
+        status = DeviceStatus.CALIBRATION;
+        log("Начата калибровка");
+        
+        // Имитация калибровки
+        self.calibrationComplete() after 5000; // 5 секунд
+        
+        return true;
+    }
+    
+    // Завершение калибровки
+    message calibrationComplete() {
+        status = DeviceStatus.OPERATIONAL;
+        log("Калибровка завершена");
+    }
+    
+    // Аварийная остановка
+    private boolean emergencyStop() {
+        status = DeviceStatus.ERROR;
+        log("АВАРИЙНАЯ ОСТАНОВКА");
+        return true;
+    }
+    
+    // Завершение команды
+    message commandComplete(String command, boolean success) {
+        if (success) {
+            log("Команда выполнена успешно: " + command);
+        } else {
+            log("Команда завершилась с ошибкой: " + command);
+        }
+    }
+    
+    // Завершение работы устройства
+    message shutdown() {
+        status = DeviceStatus.SHUTDOWN;
+        log("Устройство остановлено");
+    }
+    
+    // Геттеры
+    public String getName() { return name; }
+    public DeviceType getDeviceType() { return deviceType; }
+    public DeviceStatus getStatus() { return status; }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Пациент
+actor Patient {
+    private String name;
+    private boolean active = false;
+    private Map<String, Object> vitalSigns = new HashMap<>();
+    
+    // Конструктор
+    public Patient(String patientName) {
+        this.name = patientName;
+    }
+    
+    // Инициализация
+    message init() {
+        active = true;
+        log("Пациент инициализирован");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Пациент остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Тревога
+class Alert {
+    private String id;
+    private String deviceName;
+    private String alertType;
+    private String description;
+    private AlertSeverity severity;
+    private long timestamp;
+    private boolean acknowledged = false;
+    
+    public Alert(String alertId, String device, String type, String desc, AlertSeverity sev) {
+        this.id = alertId;
+        this.deviceName = device;
+        this.alertType = type;
+        this.description = desc;
+        this.severity = sev;
+        this.timestamp = System.currentTimeMillis();
+    }
+    
+    // Геттеры
+    public String getId() { return id; }
+    public String getDeviceName() { return deviceName; }
+    public String getAlertType() { return alertType; }
+    public String getDescription() { return description; }
+    public AlertSeverity getSeverity() { return severity; }
+    public long getTimestamp() { return timestamp; }
+    public boolean isAcknowledged() { return acknowledged; }
+    
+    // Подтверждение тревоги
+    public void acknowledge() {
+        this.acknowledged = true;
+    }
+}
+
+// Менеджер данных
+actor DataManager {
+    private boolean active = false;
+    private Map<String, List<Map<String, Object>>> deviceDataHistory = new HashMap<>();
+    private List<String> commandLog = new ArrayList<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        log("Менеджер данных запущен");
+    }
+    
+    // Обработка данных устройства
+    message processDeviceData(String deviceName, Map<String, Object> data, long timestamp) {
+        if (!active) return;
+        
+        // Добавление временной метки
+        data.put("timestamp", timestamp);
+        
+        // Сохранение в историю
+        if (!deviceDataHistory.containsKey(deviceName)) {
+            deviceDataHistory.put(deviceName, new ArrayList<>());
+        }
+        
+        deviceDataHistory.get(deviceName).add(new HashMap<>(data));
+        
+        // Ограничение размера истории
+        if (deviceDataHistory.get(deviceName).size() > 1000) {
+            deviceDataHistory.get(deviceName).remove(0);
+        }
+        
+        log("Данные обработаны от " + deviceName);
+    }
+    
+    // Логирование команд
+    message logCommand(String deviceName, String command, Map<String, Object> parameters, long timestamp) {
+        if (!active) return;
+        
+        String cmdLog = timestamp + ": " + deviceName + " -> " + command + " " + parameters;
+        commandLog.add(cmdLog);
+        
+        // Ограничение размера лога
+        if (commandLog.size() > 1000) {
+            commandLog.remove(0);
+        }
+        
+        log("Команда залогирована: " + command);
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Менеджер данных остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[DataManager] " + message);
+    }
+}
+
+// Менеджер тревог
+actor AlertManager {
+    private boolean active = false;
+    private boolean backupMode = false;
+    private List<Alert> alertQueue = new ArrayList<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        log("Менеджер тревог запущен");
+    }
+    
+    // Обработка тревоги
+    message processAlert(Alert alert) {
+        if (!active) return;
+        
+        // Добавление в очередь
+        alertQueue.add(alert);
+        
+        // Сортировка по приоритету
+        alertQueue.sort((a1, a2) -> a2.getSeverity().ordinal() - a1.getSeverity().ordinal());
+        
+        // Обработка критических тревог немедленно
+        if (alert.getSeverity() == AlertSeverity.CRITICAL) {
+            handleCriticalAlert(alert);
+        }
+        
+        log("Тревога обработана: " + alert.getAlertType());
+    }
+    
+    // Обработка критической тревоги
+    private void handleCriticalAlert(Alert alert) {
+        log("КРИТИЧЕСКАЯ ТРЕВОГА: " + alert.getAlertType() + " от " + alert.getDeviceName());
+        
+        // Уведомление персонала
+        notifyStaff(alert);
+        
+        // Активация протоколов безопасности
+        mainController.securityManager.activateEmergencyProtocol();
+    }
+    
+    // Уведомление персонала
+    private void notifyStaff(Alert alert) {
+        log("Уведомление персонала о тревоге: " + alert.getDescription());
+    }
+    
+    // Активация резервного режима
+    message activateBackupMode() {
+        backupMode = true;
+        log("Резервный режим активирован");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Менеджер тревог остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[AlertManager] " + message);
+    }
+}
+
+// Менеджер безопасности
+actor SecurityManager {
+    private boolean active = false;
+    private boolean emergencyProtocol = false;
+    private Map<String, List<String>> authorizedCommands = new HashMap<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        setupAuthorization();
+        log("Менеджер безопасности запущен");
+    }
+    
+    // Настройка авторизации
+    private void setupAuthorization() {
+        // Команды для вентилятора
+        authorizedCommands.put("Ventilator_ICU1", Arrays.asList("SET_CONFIGURATION", "START_MEASUREMENT", "STOP_MEASUREMENT"));
+        authorizedCommands.put("Ventilator_ICU2", Arrays.asList("SET_CONFIGURATION", "START_MEASUREMENT", "STOP_MEASUREMENT"));
+        
+        // Команды для ЭКГ монитора
+        authorizedCommands.put("ECG_Monitor_1", Arrays.asList("SET_CONFIGURATION", "START_MEASUREMENT", "STOP_MEASUREMENT"));
+        authorizedCommands.put("ECG_Monitor_2", Arrays.asList("SET_CONFIGURATION", "START_MEASUREMENT", "STOP_MEASUREMENT"));
+        
+        // Остальные устройства...
+    }
+    
+    // Валидация данных
+    message validateData(String deviceName, Map<String, Object> data) {
+        if (!active) return false;
+        
+        // Проверка на аномальные значения
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            if (!isValidValue(entry.getKey(), entry.getValue())) {
+                log("ОШИБКА: Недопустимое значение " + entry.getKey() + " = " + entry.getValue());
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    // Проверка валидности значения
+    private boolean isValidValue(String parameter, Object value) {
+        if (value == null) return false;
+        
+        // Проверка в зависимости от параметра
+        switch (parameter) {
+            case "HeartRate":
+                if (value instanceof Double) {
+                    double hr = (Double) value;
+                    return hr >= 0.0 && hr <= 300.0;
+                }
+                break;
+            case "SpO2":
+                if (value instanceof Double) {
+                    double spo2 = (Double) value;
+                    return spo2 >= 0.0 && spo2 <= 100.0;
+                }
+                break;
+            case "TidalVolume":
+                if (value instanceof Double) {
+                    double tv = (Double) value;
+                    return tv >= 0.0 && tv <= 2000.0;
+                }
+                break;
+        }
+        
+        return true;
+    }
+    
+    // Авторизация команды
+    message authorizeCommand(String deviceName, String command) {
+        if (!active) return false;
+        
+        if (authorizedCommands.containsKey(deviceName)) {
+            return authorizedCommands.get(deviceName).contains(command);
+        }
+        
+        return false;
+    }
+    
+    // Активация аварийного протокола
+    message activateEmergencyProtocol() {
+        emergencyProtocol = true;
+        log("АВАРИЙНЫЙ ПРОТОКОЛ АКТИВИРОВАН");
+        
+        // Блокировка всех команд управления
+        blockAllCommands();
+    }
+    
+    // Блокировка всех команд
+    private void blockAllCommands() {
+        log("Все команды управления заблокированы");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Менеджер безопасности остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[SecurityManager] " + message);
+    }
+}
+
+// Менеджер связи
+actor CommunicationManager {
+    private boolean active = false;
+    private Map<String, CommunicationChannel> channels = new HashMap<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        createChannels();
+        log("Менеджер связи запущен");
+    }
+    
+    // Создание каналов связи
+    private void createChannels() {
+        // Каналы для медицинских данных
+        channels.put("MedicalData", new CommunicationChannel("TCP", 1000));
+        channels.put("Alerts", new CommunicationChannel("UDP", 100));
+        channels.put("Control", new CommunicationChannel("TCP", 500));
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Менеджер связи остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[CommunicationManager] " + message);
+    }
+}
+
+// Канал связи
+class CommunicationChannel {
+    private String protocol;
+    private long timeout;
+    
+    public CommunicationChannel(String protocolType, long timeoutMs) {
+        this.protocol = protocolType;
+        this.timeout = timeoutMs;
+    }
+    
+    public String getProtocol() { return protocol; }
+    public long getTimeout() { return timeout; }
+}
+
+// Главная функция
+actor Main {
+    message start() {
+        // Создание контроллера медицинской системы
+        MedicalSystemController controller = new MedicalSystemController();
+        
+        // Запуск системы
+        controller.init();
+        
+        log("Система медицинских устройств IEEE 11073 запущена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[Main] " + message);
+    }
+}

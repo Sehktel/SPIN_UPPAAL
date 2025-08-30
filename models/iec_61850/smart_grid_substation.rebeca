@@ -1,0 +1,707 @@
+// Smart Grid Substation Model based on IEC 61850
+// Модель умной подстанции на основе стандарта IEC 61850
+// Автор: Senior Developer
+// Дата: 2024-12-19
+
+// Импорты
+import java.util.*;
+import java.time.*;
+
+// Главный актор подстанции
+actor SubstationController {
+    // Состояние подстанции
+    private SubstationStatus status = SubstationStatus.INITIALIZING;
+    private Map<String, IEDDevice> iedDevices = new HashMap<>();
+    private Map<String, CircuitBreaker> circuitBreakers = new HashMap<>();
+    private Map<String, Transformer> transformers = new HashMap<>();
+    
+    // Временные параметры IEC 61850
+    private static final long GOOSE_TIMEOUT = 4; // 4ms для GOOSE
+    private static final long MMS_TIMEOUT = 1000; // 1s для MMS
+    private static final long HEARTBEAT_INTERVAL = 1000; // 1s heartbeat
+    
+    // Ссылки на компоненты
+    private CommunicationManager commManager;
+    private ProtectionSystem protectionSystem;
+    private SCADASystem scadaSystem;
+    
+    // Инициализация подстанции
+    message init() {
+        log("Инициализация подстанции IEC 61850");
+        
+        // Создание IED устройств
+        createIEDDevices();
+        
+        // Создание выключателей
+        createCircuitBreakers();
+        
+        // Создание трансформаторов
+        createTransformers();
+        
+        // Создание систем управления
+        commManager = new CommunicationManager();
+        protectionSystem = new ProtectionSystem();
+        scadaSystem = new SCADASystem();
+        
+        // Инициализация компонентов
+        commManager.init();
+        protectionSystem.init();
+        scadaSystem.init();
+        
+        // Запуск мониторинга
+        startMonitoring();
+        
+        status = SubstationStatus.OPERATIONAL;
+        log("Подстанция готова к работе");
+    }
+    
+    // Создание IED устройств
+    private void createIEDDevices() {
+        String[] iedNames = {"IED_Bay1", "IED_Bay2", "IED_Bay3", "IED_Protection", "IED_Measurement"};
+        
+        for (String name : iedNames) {
+            IEDDevice ied = new IEDDevice(name);
+            iedDevices.put(name, ied);
+            ied.init();
+        }
+    }
+    
+    // Создание выключателей
+    private void createCircuitBreakers() {
+        String[] cbNames = {"CB_Bay1", "CB_Bay2", "CB_Bay3", "CB_Main", "CB_Tie"};
+        
+        for (String name : cbNames) {
+            CircuitBreaker cb = new CircuitBreaker(name);
+            circuitBreakers.put(name, cb);
+            cb.init();
+        }
+    }
+    
+    // Создание трансформаторов
+    private void createTransformers() {
+        String[] transNames = {"TR_Main", "TR_Auxiliary", "TR_Measurement"};
+        
+        for (String name : transNames) {
+            Transformer tr = new Transformer(name);
+            transformers.put(name, tr);
+            tr.init();
+        }
+    }
+    
+    // Запуск мониторинга
+    message startMonitoring() {
+        if (status != SubstationStatus.OPERATIONAL) return;
+        
+        // Проверка состояния всех компонентов
+        checkSystemHealth();
+        
+        // Планирование следующей проверки
+        self.startMonitoring() after HEARTBEAT_INTERVAL;
+    }
+    
+    // Проверка здоровья системы
+    private void checkSystemHealth() {
+        int operationalIEDs = 0;
+        int operationalCBs = 0;
+        int operationalTRs = 0;
+        
+        // Проверка IED устройств
+        for (IEDDevice ied : iedDevices.values()) {
+            if (ied.getStatus() == IEDStatus.OPERATIONAL) {
+                operationalIEDs++;
+            }
+        }
+        
+        // Проверка выключателей
+        for (CircuitBreaker cb : circuitBreakers.values()) {
+            if (cb.getStatus() == CBStatus.OPERATIONAL) {
+                operationalCBs++;
+            }
+        }
+        
+        // Проверка трансформаторов
+        for (Transformer tr : transformers.values()) {
+            if (tr.getStatus() == TRStatus.OPERATIONAL) {
+                operationalTRs++;
+            }
+        }
+        
+        // Анализ состояния
+        if (operationalIEDs < 3) {
+            log("ВНИМАНИЕ: Недостаточно операционных IED устройств");
+            protectionSystem.activateBackupMode();
+        }
+        
+        if (operationalCBs < 3) {
+            log("КРИТИЧНО: Недостаточно операционных выключателей");
+            scadaSystem.activateEmergencyMode();
+        }
+        
+        log("Статус: IED=" + operationalIEDs + "/5, CB=" + operationalCBs + "/5, TR=" + operationalTRs + "/3");
+    }
+    
+    // Обработка команд управления
+    message controlCommand(String deviceType, String deviceName, String command, long timestamp) {
+        log("Команда управления: " + deviceType + " " + deviceName + " -> " + command);
+        
+        switch (deviceType) {
+            case "IED":
+                if (iedDevices.containsKey(deviceName)) {
+                    iedDevices.get(deviceName).executeCommand(command);
+                }
+                break;
+            case "CB":
+                if (circuitBreakers.containsKey(deviceName)) {
+                    circuitBreakers.get(deviceName).executeCommand(command);
+                }
+                break;
+            case "TR":
+                if (transformers.containsKey(deviceName)) {
+                    transformers.get(deviceName).executeCommand(command);
+                }
+                break;
+            default:
+                log("Неизвестный тип устройства: " + deviceType);
+        }
+        
+        // Логирование команды
+        scadaSystem.logCommand(deviceType, deviceName, command, timestamp);
+    }
+    
+    // Обработка аварийных сигналов
+    message emergencySignal(String source, String signalType, long timestamp) {
+        log("АВАРИЙНЫЙ СИГНАЛ: " + source + " - " + signalType);
+        
+        // Активация системы защиты
+        protectionSystem.handleEmergencySignal(source, signalType, timestamp);
+        
+        // Уведомление SCADA
+        scadaSystem.handleEmergencySignal(source, signalType, timestamp);
+        
+        // Принятие мер по устранению
+        handleEmergency(signalType);
+    }
+    
+    // Обработка аварий
+    private void handleEmergency(String signalType) {
+        switch (signalType) {
+            case "OVERLOAD":
+                // Отключение нагрузки
+                for (CircuitBreaker cb : circuitBreakers.values()) {
+                    if (cb.getStatus() == CBStatus.OPERATIONAL) {
+                        cb.trip();
+                    }
+                }
+                break;
+            case "SHORT_CIRCUIT":
+                // Активация защиты
+                protectionSystem.activateShortCircuitProtection();
+                break;
+            case "UNDERVOLTAGE":
+                // Активация компенсации
+                transformers.get("TR_Main").activateCompensation();
+                break;
+            default:
+                log("Неизвестный тип аварии: " + signalType);
+        }
+    }
+    
+    // Завершение работы подстанции
+    message shutdown() {
+        status = SubstationStatus.SHUTDOWN;
+        
+        // Остановка всех компонентов
+        for (IEDDevice ied : iedDevices.values()) {
+            ied.shutdown();
+        }
+        
+        for (CircuitBreaker cb : circuitBreakers.values()) {
+            cb.shutdown();
+        }
+        
+        for (Transformer tr : transformers.values()) {
+            tr.shutdown();
+        }
+        
+        commManager.shutdown();
+        protectionSystem.shutdown();
+        scadaSystem.shutdown();
+        
+        log("Подстанция остановлена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[SubstationController] " + message);
+    }
+}
+
+// Перечисления статусов
+enum SubstationStatus { INITIALIZING, OPERATIONAL, MAINTENANCE, SHUTDOWN }
+enum IEDStatus { INITIALIZING, OPERATIONAL, ERROR, MAINTENANCE }
+enum CBStatus { OPEN, CLOSED, OPERATIONAL, ERROR, MAINTENANCE }
+enum TRStatus { OPERATIONAL, OVERLOAD, ERROR, MAINTENANCE }
+
+// IED устройство (Intelligent Electronic Device)
+actor IEDDevice {
+    private String name;
+    private IEDStatus status = IEDStatus.INITIALIZING;
+    private Map<String, Object> measurements = new HashMap<>();
+    private List<String> commands = new ArrayList<>();
+    
+    // Временные параметры
+    private static final long MEASUREMENT_INTERVAL = 100; // 100ms
+    private static final long COMMAND_TIMEOUT = 50; // 50ms
+    
+    // Конструктор
+    public IEDDevice(String deviceName) {
+        this.name = deviceName;
+    }
+    
+    // Инициализация IED
+    message init() {
+        status = IEDStatus.INITIALIZING;
+        
+        // Имитация инициализации
+        self.initializationComplete() after 100;
+        
+        log("IED инициализируется");
+    }
+    
+    // Завершение инициализации
+    message initializationComplete() {
+        status = IEDStatus.OPERATIONAL;
+        
+        // Запуск измерений
+        startMeasurements();
+        
+        log("IED готов к работе");
+    }
+    
+    // Запуск измерений
+    message startMeasurements() {
+        if (status != IEDStatus.OPERATIONAL) return;
+        
+        // Сбор измерений
+        collectMeasurements();
+        
+        // Планирование следующего измерения
+        self.startMeasurements() after MEASUREMENT_INTERVAL;
+    }
+    
+    // Сбор измерений
+    private void collectMeasurements() {
+        // Имитация измерений
+        double voltage = 220.0 + (Math.random() - 0.5) * 20.0;
+        double current = 100.0 + (Math.random() - 0.5) * 10.0;
+        double power = voltage * current;
+        double frequency = 50.0 + (Math.random() - 0.5) * 0.1;
+        
+        measurements.put("Voltage", voltage);
+        measurements.put("Current", current);
+        measurements.put("Power", power);
+        measurements.put("Frequency", frequency);
+        
+        // Отправка измерений в SCADA
+        mainController.scadaSystem.updateMeasurements(name, measurements);
+        
+        log("Измерения обновлены: V=" + String.format("%.1f", voltage) + "V, I=" + String.format("%.1f", current) + "A");
+    }
+    
+    // Выполнение команды
+    message executeCommand(String command) {
+        if (status != IEDStatus.OPERATIONAL) {
+            log("IED не готов к выполнению команд");
+            return;
+        }
+        
+        log("Выполнение команды: " + command);
+        
+        // Имитация выполнения команды
+        self.commandComplete(command) after COMMAND_TIMEOUT;
+        
+        commands.add(command);
+    }
+    
+    // Завершение команды
+    message commandComplete(String command) {
+        log("Команда выполнена: " + command);
+        
+        // Уведомление SCADA
+        mainController.scadaSystem.commandCompleted(name, command);
+    }
+    
+    // Завершение работы IED
+    message shutdown() {
+        status = IEDStatus.SHUTDOWN;
+        log("IED остановлен");
+    }
+    
+    // Геттеры
+    public String getName() { return name; }
+    public IEDStatus getStatus() { return status; }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Выключатель
+actor CircuitBreaker {
+    private String name;
+    private CBStatus status = CBStatus.OPEN;
+    private boolean operational = false;
+    
+    // Временные параметры
+    private static final long OPERATION_TIME = 30; // 30ms
+    
+    // Конструктор
+    public CircuitBreaker(String cbName) {
+        this.name = cbName;
+    }
+    
+    // Инициализация выключателя
+    message init() {
+        operational = true;
+        status = CBStatus.OPEN;
+        log("Выключатель инициализирован");
+    }
+    
+    // Выполнение команды
+    message executeCommand(String command) {
+        if (!operational) {
+            log("Выключатель не готов к работе");
+            return;
+        }
+        
+        switch (command) {
+            case "CLOSE":
+                if (status == CBStatus.OPEN) {
+                    log("Закрытие выключателя");
+                    self.closeBreaker() after OPERATION_TIME;
+                }
+                break;
+            case "OPEN":
+                if (status == CBStatus.CLOSED) {
+                    log("Открытие выключателя");
+                    self.openBreaker() after OPERATION_TIME;
+                }
+                break;
+            case "TRIP":
+                log("Аварийное отключение");
+                self.tripBreaker() after 10; // Быстрое отключение
+                break;
+            default:
+                log("Неизвестная команда: " + command);
+        }
+    }
+    
+    // Закрытие выключателя
+    message closeBreaker() {
+        status = CBStatus.CLOSED;
+        log("Выключатель закрыт");
+        
+        // Уведомление SCADA
+        mainController.scadaSystem.breakerStatusChanged(name, "CLOSED");
+    }
+    
+    // Открытие выключателя
+    message openBreaker() {
+        status = CBStatus.OPEN;
+        log("Выключатель открыт");
+        
+        // Уведомление SCADA
+        mainController.scadaSystem.breakerStatusChanged(name, "OPEN");
+    }
+    
+    // Аварийное отключение
+    message tripBreaker() {
+        status = CBStatus.OPEN;
+        log("Выключатель аварийно отключен");
+        
+        // Уведомление SCADA
+        mainController.scadaSystem.breakerStatusChanged(name, "TRIPPED");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        operational = false;
+        status = CBStatus.OPEN;
+        log("Выключатель остановлен");
+    }
+    
+    // Геттеры
+    public String getName() { return name; }
+    public CBStatus getStatus() { return status; }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Трансформатор
+actor Transformer {
+    private String name;
+    private TRStatus status = TRStatus.OPERATIONAL;
+    private boolean compensationActive = false;
+    
+    // Параметры
+    private double primaryVoltage = 110000.0; // 110kV
+    private double secondaryVoltage = 220.0; // 220V
+    private double load = 0.0; // 0-100%
+    
+    // Конструктор
+    public Transformer(String trName) {
+        this.name = trName;
+    }
+    
+    // Инициализация
+    message init() {
+        status = TRStatus.OPERATIONAL;
+        log("Трансформатор инициализирован");
+    }
+    
+    // Выполнение команды
+    message executeCommand(String command) {
+        switch (command) {
+            case "ACTIVATE_COMPENSATION":
+                activateCompensation();
+                break;
+            case "DEACTIVATE_COMPENSATION":
+                deactivateCompensation();
+                break;
+            case "ADJUST_TAP":
+                adjustTap();
+                break;
+            default:
+                log("Неизвестная команда: " + command);
+        }
+    }
+    
+    // Активация компенсации
+    private void activateCompensation() {
+        compensationActive = true;
+        log("Компенсация активирована");
+    }
+    
+    // Деактивация компенсации
+    private void deactivateCompensation() {
+        compensationActive = false;
+        log("Компенсация деактивирована");
+    }
+    
+    // Регулировка отводов
+    private void adjustTap() {
+        log("Регулировка отводов трансформатора");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        status = TRStatus.SHUTDOWN;
+        log("Трансформатор остановлен");
+    }
+    
+    // Геттеры
+    public String getName() { return name; }
+    public TRStatus getStatus() { return status; }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[" + name + "] " + message);
+    }
+}
+
+// Менеджер связи
+actor CommunicationManager {
+    private boolean active = false;
+    private Map<String, CommunicationChannel> channels = new HashMap<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        createChannels();
+        log("Менеджер связи запущен");
+    }
+    
+    // Создание каналов связи
+    private void createChannels() {
+        // GOOSE каналы для быстрой связи
+        channels.put("GOOSE_Protection", new CommunicationChannel("GOOSE", 4));
+        channels.put("GOOSE_Control", new CommunicationChannel("GOOSE", 4));
+        
+        // MMS каналы для медленной связи
+        channels.put("MMS_SCADA", new CommunicationChannel("MMS", 1000));
+        channels.put("MMS_Engineering", new CommunicationChannel("MMS", 1000));
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Менеджер связи остановлен");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[CommunicationManager] " + message);
+    }
+}
+
+// Канал связи
+class CommunicationChannel {
+    private String type;
+    private long timeout;
+    
+    public CommunicationChannel(String channelType, long timeoutMs) {
+        this.type = channelType;
+        this.timeout = timeoutMs;
+    }
+    
+    public String getType() { return type; }
+    public long getTimeout() { return timeout; }
+}
+
+// Система защиты
+actor ProtectionSystem {
+    private boolean active = false;
+    private boolean backupMode = false;
+    private boolean shortCircuitProtection = false;
+    
+    // Инициализация
+    message init() {
+        active = true;
+        log("Система защиты запущена");
+    }
+    
+    // Обработка аварийных сигналов
+    message handleEmergencySignal(String source, String signalType, long timestamp) {
+        log("Обработка аварийного сигнала: " + source + " - " + signalType);
+        
+        switch (signalType) {
+            case "SHORT_CIRCUIT":
+                activateShortCircuitProtection();
+                break;
+            case "OVERLOAD":
+                activateOverloadProtection();
+                break;
+            case "UNDERVOLTAGE":
+                activateUndervoltageProtection();
+                break;
+        }
+    }
+    
+    // Активация защиты от КЗ
+    message activateShortCircuitProtection() {
+        shortCircuitProtection = true;
+        log("Защита от КЗ активирована");
+        
+        // Отключение поврежденного участка
+        mainController.circuitBreakers.get("CB_Main").trip();
+    }
+    
+    // Активация защиты от перегрузки
+    private void activateOverloadProtection() {
+        log("Защита от перегрузки активирована");
+    }
+    
+    // Активация защиты от пониженного напряжения
+    private void activateUndervoltageProtection() {
+        log("Защита от пониженного напряжения активирована");
+    }
+    
+    // Активация резервного режима
+    message activateBackupMode() {
+        backupMode = true;
+        log("Резервный режим активирован");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("Система защиты остановлена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[ProtectionSystem] " + message);
+    }
+}
+
+// SCADA система
+actor SCADASystem {
+    private boolean active = false;
+    private Map<String, Object> measurements = new HashMap<>();
+    private List<String> commands = new ArrayList<>();
+    private List<String> events = new ArrayList<>();
+    
+    // Инициализация
+    message init() {
+        active = true;
+        log("SCADA система запущена");
+    }
+    
+    // Обновление измерений
+    message updateMeasurements(String deviceName, Map<String, Object> data) {
+        measurements.put(deviceName, data);
+        log("Измерения обновлены от " + deviceName);
+    }
+    
+    // Логирование команд
+    message logCommand(String deviceType, String deviceName, String command, long timestamp) {
+        String cmdLog = timestamp + ": " + deviceType + " " + deviceName + " -> " + command;
+        commands.add(cmdLog);
+        log("Команда залогирована: " + command);
+    }
+    
+    // Завершение команды
+    message commandCompleted(String deviceName, String command) {
+        log("Команда завершена: " + deviceName + " - " + command);
+    }
+    
+    // Изменение статуса выключателя
+    message breakerStatusChanged(String breakerName, String status) {
+        log("Статус выключателя изменен: " + breakerName + " -> " + status);
+    }
+    
+    // Обработка аварийных сигналов
+    message handleEmergencySignal(String source, String signalType, long timestamp) {
+        String event = timestamp + ": " + source + " - " + signalType;
+        events.add(event);
+        log("Аварийный сигнал зарегистрирован: " + signalType);
+    }
+    
+    // Активация аварийного режима
+    message activateEmergencyMode() {
+        log("Аварийный режим активирован");
+    }
+    
+    // Завершение работы
+    message shutdown() {
+        active = false;
+        log("SCADA система остановлена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[SCADASystem] " + message);
+    }
+}
+
+// Главная функция
+actor Main {
+    message start() {
+        // Создание контроллера подстанции
+        SubstationController controller = new SubstationController();
+        
+        // Запуск подстанции
+        controller.init();
+        
+        log("Подстанция IEC 61850 запущена");
+    }
+    
+    // Логирование
+    private void log(String message) {
+        System.out.println("[Main] " + message);
+    }
+}

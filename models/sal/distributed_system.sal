@@ -237,3 +237,5 @@ BEGIN
         AG(COUNT(LAMBDA (n: node_id): node[n].state = FAILED) <= 1);
         
 END;
+
+

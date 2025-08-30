@@ -201,3 +201,5 @@ MainSystem = ProcessA ||| ProcessB ||| ProcessC ||| ProcessD ||| ResourceManager
 
 -- Спецификация восстановления: система должна восстанавливаться после ошибок
 #assert MainSystem [F error] W [F retry];
+
+

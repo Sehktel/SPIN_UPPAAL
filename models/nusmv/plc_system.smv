@@ -123,3 +123,5 @@ SPEC AG(pump1_state = STOPPING -> shutdown_timer <= 20)
 -- Спецификации взаимного исключения
 SPEC AG(!(pump1_state = STARTING & pump2_state = STARTING))
 SPEC AG(!(pump1_state = STOPPING & pump2_state = STOPPING))
+
+

@@ -456,3 +456,5 @@ ltl "Resource Management: Tasks Are Completed" =
 ltl "Fault Tolerance: System Continues With Failures" =
     G((temp_sensor_state = ERROR_SENSOR | pressure_sensor_state = ERROR_SENSOR) -> 
        F(system_mode = OPERATIONAL | system_mode = MAINTENANCE_MODE));
+
+
